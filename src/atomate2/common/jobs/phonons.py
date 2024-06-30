@@ -174,11 +174,76 @@ def generate_phonon_displacements(
         symprec=symprec,
         is_symmetry=sym_reduce,
     )
-    phonon.generate_displacements(distance=displacement)
+
+       # following is modified by jiongzhi Zheng
+    # I will use the ALM to determine how many displaced supercells we need to use for extract second order force constants here
+    from alm import ALM
+    supercell_z = phonon.supercell
+    lattice = supercell_z.cell
+    positions = supercell_z.scaled_positions
+    numbers = supercell_z.numbers
+    natom = len(numbers)
+    with ALM(lattice, positions, numbers) as alm:
+        alm.define(1)
+        alm.suggest()
+        n_fp = alm._get_number_of_irred_fc_elements(1)
+
+    """Determine how many displaced supercells we need to use for extract second order force constants here
+    if we want to calculate the lattice thermal conductivty here, I highly suggest you to use the finite diplacement method 
+    to calculate the zero-K second order force constants which garantee you get the completely converged results"""
+
+    num = int(np.ceil(n_fp / (3.0 * natom)))
+
+
+    displacement_t = 0.01
+    phonon.generate_displacements(displacement_t)
+    num_disp_t = len(phonon.displacements)
+    if num_disp_t > 3:
+        num_d = int(np.ceil(num_disp_t / 3.0))
+        if num_d < num:
+            num_d = int(num + 1)
+        else:
+            pass
+    else:
+        num_d = int(num+1)
+
+    print ("The number of free parameters of Second Order Force Constants is ", n_fp)
+    print ()
+    print ("The Number of Equations Used to Obtain the 2ND FCs is ", 3 * natom * num)
+    print ()
+    print ("Be Careful!!! Full Rank of Matrix can not always guarantee the correct result sometimes"\
+           "\n if the total atoms in supercell is less than 100 and"\
+           "\n lattice constants are less than 10 angstrom,"\
+           "\n I highly suggest you to displace more random configurations"\
+           "\n At least use one or two more configurations basd on the suggested number of displacements")
+    
+    displacement_f = 0.01
+    phonon.generate_displacements(distance=displacement_f)
+
+    disps = phonon.displacements
+
+    finite_disp = False
+    f_disp_n = len(disps)
+    if f_disp_n > 3:
+        phonon.generate_displacements(distance=displacement, number_of_snapshots=num_d, random_seed=103)
+    else:
+        finite_disp = True
 
     supercells = phonon.supercells_with_displacements
 
-    return [get_pmg_structure(cell) for cell in supercells]
+    displacements = []
+    for cell in supercells:
+        displacements.append(get_pmg_structure(cell))
+
+    displacements.append(get_pmg_structure(phonon.supercell))
+    return displacements
+
+
+    #phonon.generate_displacements(distance=displacement)
+
+    #supercells = phonon.supercells_with_displacements
+
+    #return [get_pmg_structure(cell) for cell in supercells]
 
 
 @job(
