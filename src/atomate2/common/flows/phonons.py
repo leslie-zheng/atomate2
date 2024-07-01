@@ -145,6 +145,8 @@ class BasePhononMaker(Maker, ABC):
     generate_frequencies_eigenvectors_kwargs: dict = field(default_factory=dict)
     kpath_scheme: str = "seekpath"
     code: str = None
+
+    mp_id: str = None
     store_force_constants: bool = True
     # if True, use the socket for the paralleled calculation of the phonon displacements,
     # however, currently the true parallelization is still under experimental testing
@@ -340,6 +342,7 @@ class BasePhononMaker(Maker, ABC):
             use_symmetrized_structure=self.use_symmetrized_structure,
             kpath_scheme=self.kpath_scheme,
             code=self.code,
+            mp_id=self.mp_id,
             structure=structure,
             displacement_data=displacement_calcs.output,
             epsilon_static=epsilon_static,
