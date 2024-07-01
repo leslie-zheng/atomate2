@@ -146,6 +146,10 @@ class BasePhononMaker(Maker, ABC):
     kpath_scheme: str = "seekpath"
     code: str = None
     store_force_constants: bool = True
+    # if True, use the socket for the paralleled calculation of the phonon displacements,
+    # however, currently the true parallelization is still under experimental testing
+    # not sure wehther it works for the lasso method extracting the force constants
+    # because the lasso method explicitly need the displaced structures pairing with the forces.
     socket: bool = False
 
     def make(
