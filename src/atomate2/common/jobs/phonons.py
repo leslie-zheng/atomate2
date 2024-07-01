@@ -18,7 +18,7 @@ from pymatgen.transformations.advanced_transformations import (
     CubicSupercellTransformation,
 )
 
-from atomate2.common.schemas.phonons import ForceConstants, PhononBSDOSDoc, get_factor
+from atomate2.common.schemas.phonons import Forceconstants, PhononBSDOSDoc, get_factor
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -248,7 +248,7 @@ def generate_phonon_displacements(
 
 @job(
     output_schema=PhononBSDOSDoc,
-    data=[PhononDos, PhononBandStructureSymmLine, ForceConstants],
+    data=[PhononDos, PhononBandStructureSymmLine, Forceconstants],
 )
 def generate_frequencies_eigenvectors(
     structure: Structure,

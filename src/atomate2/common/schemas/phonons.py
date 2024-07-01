@@ -117,7 +117,7 @@ class PhononUUIDs(BaseModel):
     born_run_uuid: Optional[str] = Field(None, description="born run uuid")
 
 
-class ForceConstants(MSONable):
+class Forceconstants(MSONable):
     """A force constants class."""
 
     def __init__(self, force_constants: list[list[Matrix3D]]) -> None:
@@ -198,7 +198,7 @@ class PhononBSDOSDoc(StructureMetadata, extra="allow"):  # type: ignore[call-arg
     )
 
     # needed, e.g. to compute Grueneisen parameter etc
-    force_constants: Optional[ForceConstants] = Field(
+    force_constants: Optional[Forceconstants] = Field(
         None, description="Force constants between every pair of atoms in the structure"
     )
 
@@ -554,8 +554,10 @@ class PhononBSDOSDoc(StructureMetadata, extra="allow"):  # type: ignore[call-arg
 
             new_plotter = PhononBSPlotter(bs=bs_symm_line)
 
-            new_plotter.save_plot("phonon_band_structure.eps",img_format=kwargs.get("img_format", "eps"),units=kwargs.get("units", "THz"),)
-
+            new_plotter.save_plot(
+            filename=kwargs.get("filename_bs", "phonon_band_structure.pdf"),
+            units=kwargs.get("units", "THz"),
+        )
             imaginary_modes_hiphive = bs_symm_line.has_imaginary_freq(
             tol=kwargs.get("tol_imaginary_modes", 1e-5)
         )
@@ -619,10 +621,9 @@ class PhononBSDOSDoc(StructureMetadata, extra="allow"):  # type: ignore[call-arg
             new_plotter = PhononBSPlotter(bs=bs_symm_line)
 
             new_plotter.save_plot(
-                "phonon_band_structure.eps",
-                img_format=kwargs.get("img_format", "eps"),
-                units=kwargs.get("units", "THz"),
-            )
+            filename=kwargs.get("filename_bs", "phonon_band_structure.pdf"),
+            units=kwargs.get("units", "THz"),
+        )
             
         else:
             pass
