@@ -94,7 +94,7 @@ class TightRelaxSetGenerator(VaspInputGenerator):
             "ENCUT": 700,
             "EDIFF": 1e-7,
             "LAECHG": False,
-            "EDIFFG": -0.001,
+            "EDIFFG": -0.00001,
             "LREAL": False,
             "NSW": 99,
             "LCHARG": False,
