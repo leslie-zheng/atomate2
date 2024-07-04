@@ -565,6 +565,7 @@ class PhononBSDOSDoc(StructureMetadata, extra="allow"):  # type: ignore[call-arg
 
         else:
            imaginary_modes_hiphive = False
+           imaginary_modes = False
 
         if imaginary_modes_hiphive:
             pheasy_cmd_11 = 'pheasy --dim "{0}" "{1}" "{2}" -s -w 2 --c2 10.0 --symprec 1e-3 --nbody 2'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]))
@@ -625,7 +626,9 @@ class PhononBSDOSDoc(StructureMetadata, extra="allow"):  # type: ignore[call-arg
             filename=kwargs.get("filename_bs", "phonon_band_structure.pdf"),
             units=kwargs.get("units", "THz"),
         )
-            
+            imaginary_modes_cutoff = bs_symm_line.has_imaginary_freq(
+            tol=kwargs.get("tol_imaginary_modes", 1e-5))
+            imaginary_modes = imaginary_modes_cutoff
         else:
             pass
 

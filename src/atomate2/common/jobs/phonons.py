@@ -192,20 +192,30 @@ def generate_phonon_displacements(
     if we want to calculate the lattice thermal conductivty here, I highly suggest you to use the finite diplacement method 
     to calculate the zero-K second order force constants which garantee you get the completely converged results"""
 
+    #num = int(np.ceil(n_fp / (3.0 * natom)))
+
+
+    #displacement_t = 0.01
+    #phonon.generate_displacements(displacement_t)
+    #num_disp_t = len(phonon.displacements)
+    #if num_disp_t > 3:
+    #    num_d = int(np.ceil(num_disp_t / 3.0))
+    #    if num_d < num:
+    #        num_d = int(num + 1)
+    #    else:
+    #        pass
+    #else:
+    #    num_d = int(num+1)
+
     num = int(np.ceil(n_fp / (3.0 * natom)))
-
-
     displacement_t = 0.01
     phonon.generate_displacements(displacement_t)
     num_disp_t = len(phonon.displacements)
     if num_disp_t > 3:
-        num_d = int(np.ceil(num_disp_t / 3.0))
-        if num_d < num:
-            num_d = int(num + 1)
-        else:
-            pass
+        num_d = int(np.ceil(num * 1.8))
     else:
-        num_d = int(num+1)
+        pass
+
 
     print ("The number of free parameters of Second Order Force Constants is ", n_fp)
     print ()
