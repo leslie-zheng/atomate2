@@ -32,6 +32,88 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+@job
+def add_structure(structure, phonon_maker: BaseVaspMaker | ForceFieldStaticMaker | BaseAimsMaker = None):
+    # you need to add an additional static job with a random displacement
+
+    # create your displaced structure
+    random_structure = structure
+    # create a static job
+    static_job=phonon_maker.make(random_structure)
+
+    return Response(static_job)
+
+def add_displacement_data(dispaclacement_data, new_job):
+
+
+    dispaclacement_data["uuids"].append(new_job.output.uuid)
+    dispaclacement_data["dirs"].append(new_job.output.dir_name)
+    dispaclacement_data["forces"].append(new_job.output.output.forces)
+    # added by jiongzhi zheng
+    dispaclacement_data["displaced_structures"].append(new_job.output.output.structure)
+
+    return dispaclacement_data
+
+
+
+@job
+def check_convergence(band_structure1, band_structure2, structure, phonon_maker: BaseVaspMaker | ForceFieldStaticMaker | BaseAimsMaker, displacement_data,
+                      supercell_matrix: np.array, displacement: float, sym_reduce: bool, symprec: float,
+                      use_symmetrized_structure: str | None, kpath_scheme: str, code: str, mp_id: str,
+                      total_dft_energy: float, epsilon_static: Matrix3D = None,
+                      born: Matrix3D = None, **kwargs, ):
+    """
+      Job that checks convergence of phonon calculations
+      and computes an additional displaced structure and refits.
+
+    Parameters
+    ----------
+    band_structure : BandStructure
+    structure : pymatgen.core.structure.Structure
+    """
+    jobs=[]
+    error = 0 # do your error computation for the band structures here
+    # change here
+    if error< 1:
+        return {"converged": True, "error": error}
+    # generate a new structure here with your methods from structure
+    else:
+        # one now needs to add a new structure
+        # add the data to the displacement data
+        # compare against the old band structure
+        new_structure = add_structure(structure, phonon_maker=phonon_maker)
+        jobs.append(new_structure)
+        updated_displacements = add_displacement_data(displacement_data, new_structure.output)
+        jobs.append(updated_displacements)
+        phonon_collect2 = generate_frequencies_eigenvectors(supercell_matrix=supercell_matrix,
+                                                            displacement=displacement, sym_reduce=sym_reduce,
+                                                            symprec=symprec,
+                                                            use_symmetrized_structure=use_symmetrized_structure,
+                                                            kpath_scheme=kpath_scheme, code=code,
+                                                            mp_id=mp_id, structure=structure,
+                                                            displacement_data=updated_displacements.output,
+                                                            epsilon_static=epsilon_static, born=born,
+                                                            total_dft_energy=total_dft_energy,
+                                                            **kwargs)
+
+        jobs.append(phonon_collect2)
+        check_convergenced = check_convergence(band_structure2,phonon_collect2.output.band_structure, structure=structure, phonon_maker=phonon_maker, displacement_data=updated_displacements.output, supercell_matrix=supercell_matrix,
+                                                            displacement=displacement, sym_reduce=sym_reduce,
+                                                            symprec=symprec,
+                                                            use_symmetrized_structure=use_symmetrized_structure,
+                                                            kpath_scheme=kpath_scheme, code=code,
+                                                            mp_id=mp_id,
+                                                            epsilon_static=epsilon_static, born=born,
+                                                            total_dft_energy=total_dft_energy,
+                                                            **kwargs)
+        jobs.append(check_convergenced)
+        return Response(Flow(jobs), check_convergenced.output)
+
+
+
+
+
+
 
 @job
 def get_total_energy_per_cell(
