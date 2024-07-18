@@ -14,6 +14,9 @@ from atomate2.common.jobs.phonons import (
     get_supercell_size,
     get_total_energy_per_cell,
     run_phonon_displacements,
+    check_convergence,
+    add_structure,
+    add_displacement_data
 )
 from atomate2.common.jobs.utils import structure_to_conventional, structure_to_primitive
 
@@ -360,9 +363,40 @@ class BasePhononMaker(Maker, ABC):
         )
 
         jobs.append(phonon_collect)
+        new_structure=add_structure(structure, phonon_maker=self.phonon_maker)
+        jobs.append(new_structure)
+        updated_displacements=add_displacement_data(displacement_calcs.output, new_structure.output)
+        jobs.append(updated_displacements)
+        # now use your updated displacements with the additional displacement
+        phonon_collect2=generate_frequencies_eigenvectors(supercell_matrix=supercell_matrix,
+            displacement=self.displacement,
+            sym_reduce=self.sym_reduce,
+            symprec=self.symprec,
+            use_symmetrized_structure=self.use_symmetrized_structure,
+            kpath_scheme=self.kpath_scheme,
+            code=self.code,
+            mp_id=self.mp_id,
+            structure=structure,
+            displacement_data=updated_displacements.output,
+            epsilon_static=epsilon_static,
+            born=born,
+            total_dft_energy=total_dft_energy,
+            static_run_job_dir=static_run_job_dir,
+            static_run_uuid=static_run_uuid,
+            born_run_job_dir=born_run_job_dir,
+            born_run_uuid=born_run_uuid,
+            optimization_run_job_dir=optimization_run_job_dir,
+            optimization_run_uuid=optimization_run_uuid,
+            create_thermal_displacements=self.create_thermal_displacements,
+            store_force_constants=self.store_force_constants,
+            **self.generate_frequencies_eigenvectors_kwargs)
+        jobs.append(phonon_collect2)
+        check_convergenced = check_convergence(phonon_collect.band_structure, phonon_collect2.band_structure)
+        jobs.append(check_convergenced)
 
         # create a flow including all jobs for a phonon computation
         return Flow(jobs, phonon_collect.output)
+
 
     @property
     @abstractmethod
