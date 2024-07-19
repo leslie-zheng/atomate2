@@ -32,6 +32,194 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+@job
+def add_structure(structure, phonon_maker: BaseVaspMaker | ForceFieldStaticMaker | BaseAimsMaker = None):
+    # you need to add an additional static job with a random displacement
+
+    # create your displaced structure
+    random_structure = structure
+    # create a static job
+    static_job=phonon_maker.make(random_structure)
+
+    return Response(static_job)
+
+@job(data=[Structure])
+def add_new_structure(structure: Structure,
+    supercell_matrix: np.array,
+    displacement: float,
+    sym_reduce: bool,
+    symprec: float,
+    use_symmetrized_structure: str | None,
+    kpath_scheme: str,
+    code: str,)-> list[Structure]:
+    """
+
+     Generate displaced structures with phonopy.
+
+    Parameters
+    ----------
+    structure: Structure object
+        Fully optimized input structure for phonon run
+    supercell_matrix: np.array
+        array to describe supercell matrix
+    displacement: float
+        displacement in Angstrom
+    sym_reduce: bool
+        if True, symmetry will be used to generate displacements
+    symprec: float
+        precision to determine symmetry
+    use_symmetrized_structure: str or None
+        primitive, conventional or None
+    kpath_scheme: str
+        scheme to generate kpath
+    code:
+        code to perform the computations
+
+    """
+    warnings.warn(
+        "Initial magnetic moments will not be considered for the determination "
+        "of the symmetry of the structure and thus will be removed now.",
+        stacklevel=1,
+    )
+    cell = get_phonopy_structure(
+        structure.remove_site_property(property_name="magmom")
+        if "magmom" in structure.site_properties
+        else structure
+    )
+    factor = get_factor(code)
+
+    # a bit of code repetition here as I currently
+    # do not see how to pass the phonopy object?
+    if use_symmetrized_structure == "primitive" and kpath_scheme != "seekpath":
+        primitive_matrix: np.ndarray | str = np.eye(3)
+    else:
+        primitive_matrix = "auto"
+
+    # TARP: THIS IS BAD! Including for discussions sake
+    if cell.magnetic_moments is not None and primitive_matrix == "auto":
+        if np.any(cell.magnetic_moments != 0.0):
+            raise ValueError(
+                "For materials with magnetic moments, "
+                "use_symmetrized_structure must be 'primitive'"
+            )
+        cell.magnetic_moments = None
+
+    phonon = Phonopy(
+        cell,
+        supercell_matrix,
+        primitive_matrix=primitive_matrix,
+        factor=factor,
+        symprec=symprec,
+        is_symmetry=sym_reduce,
+    )
+
+    displacement_f = 0.01
+    phonon.generate_displacements(distance=displacement_f, number_of_snapshots=1, random_seed=103)
+
+
+    displacements = []
+    supercells = phonon.supercells_with_displacements
+
+    for cell in supercells:
+        displacements.append(get_pmg_structure(cell))
+
+    displacements.append(get_pmg_structure(phonon.supercell))
+
+    return displacements
+
+
+def add_displacement_data(dispaclacement_data, new_job):
+
+
+    dispaclacement_data["uuids"].append(new_job.output.uuid)
+    dispaclacement_data["dirs"].append(new_job.output.dir_name)
+    dispaclacement_data["forces"].append(new_job.output.output.forces)
+    # added by jiongzhi zheng
+    dispaclacement_data["displaced_structures"].append(new_job.output.output.structure)
+
+    return dispaclacement_data
+
+
+
+@job
+def check_convergence(band_structure1, band_structure2, structure, phonon_maker: BaseVaspMaker | ForceFieldStaticMaker | BaseAimsMaker, displacement_data,
+                      supercell_matrix: np.array, displacement: float, sym_reduce: bool, symprec: float,
+                      use_symmetrized_structure: str | None, kpath_scheme: str, code: str, mp_id: str,
+                      total_dft_energy: float, epsilon_static: Matrix3D = None,
+                      born: Matrix3D = None, **kwargs,):
+    """
+      Job that checks convergence of phonon calculations
+      and computes an additional displaced structure and refits.
+
+    Parameters
+    ----------
+    band_structure : BandStructure
+    structure : pymatgen.core.structure.Structure
+    """
+    jobs=[]
+    error = 0 # do your error computation for the band structures here
+
+    phonon_energies_1 = band_structure1.from_dict["frequency"]
+    phonon_energies_2 = band_structure2.from_dict["frequency"]
+
+    # phonon_energies_1 and phonon_energies_2 are the two dimensional list of phonon frequencies
+    # transfer them to two dimensional matrix and calculate the error: list to matrix
+    error = np.linalg.norm((phonon_energies_1 - phonon_energies_2)/phonon_energies_1)
+
+    #for i in range(len(phonon_energies_1)):
+    #    for j in range(len(phonon_energies_1[i])):
+    #        error += (phonon_energies_1[i][j] - phonon_energies_2[i][j]) **2
+    #error = error ** 0.5
+
+    # change here
+    if error< 1:
+        return {"converged": True, "error": error}
+    # generate a new structure here with your methods from structure
+    else:
+        # one now needs to add a new structure
+        # add the data to the displacement data
+        # compare against the old band structure
+        new_structure = add_new_structure(structure, supercell_matrix, displacement, sym_reduce, symprec, use_symmetrized_structure, kpath_scheme, code)
+        jobs.append(new_structure)
+        #new_structure = add_structure(structure, phonon_maker=phonon_maker)
+        #jobs.append(new_structure)
+        updated_displacements = add_displacement_data(displacement_data, new_structure.output)
+        jobs.append(updated_displacements)
+        phonon_collect2 = generate_frequencies_eigenvectors(supercell_matrix=supercell_matrix,
+                                                            displacement=displacement, 
+                                                            sym_reduce=sym_reduce,
+                                                            symprec=symprec,
+                                                            use_symmetrized_structure=use_symmetrized_structure,
+                                                            kpath_scheme=kpath_scheme, 
+                                                            code=code,
+                                                            mp_id=mp_id, 
+                                                            structure=structure,
+                                                            displacement_data=updated_displacements.output,
+                                                            epsilon_static=epsilon_static, 
+                                                            born=born,
+                                                            total_dft_energy=total_dft_energy,
+                                                            **kwargs)
+
+        jobs.append(phonon_collect2)
+        check_convergenced = check_convergence(band_structure2,
+                                               phonon_collect2.output.band_structure, 
+                                               structure=structure, 
+                                               phonon_maker=phonon_maker, 
+                                               displacement_data=updated_displacements.output, 
+                                               supercell_matrix=supercell_matrix,
+                                                displacement=displacement, sym_reduce=sym_reduce,
+                                                symprec=symprec,
+                                                use_symmetrized_structure=use_symmetrized_structure,
+                                                kpath_scheme=kpath_scheme, code=code,
+                                                mp_id=mp_id,
+                                                epsilon_static=epsilon_static, born=born,
+                                                total_dft_energy=total_dft_energy,
+                                                **kwargs)
+        jobs.append(check_convergenced)
+
+        # I am not sure if this is the correct way to do it (return funtion)
+        return Response(addition=Flow(jobs), output=check_convergenced.output)
+
 
 @job
 def get_total_energy_per_cell(
