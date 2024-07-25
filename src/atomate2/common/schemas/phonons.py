@@ -31,9 +31,9 @@ from typing_extensions import Self
 
 # imported lib by jiongzhi zheng 
 from ase.io import read
-from hiphive import ClusterSpace, ForceConstantPotential, ForceConstants, enforce_rotational_sum_rules
-from hiphive.cutoffs import estimate_maximum_cutoff
-from hiphive.utilities import extract_parameters
+# from hiphive import ClusterSpace, ForceConstantPotential, ForceConstants, enforce_rotational_sum_rules
+# from hiphive.cutoffs import estimate_maximum_cutoff
+# from hiphive.utilities import extract_parameters
 import subprocess
 from phonopy.file_IO import write_FORCE_CONSTANTS, parse_FORCE_CONSTANTS
 from phonopy.interface.vasp import write_vasp
@@ -366,54 +366,54 @@ class PhononBSDOSDoc(StructureMetadata, extra="allow"):  # type: ignore[call-arg
              pickle.dump(set_of_forces_a,file)
 
         """"put a if else condition here to determine whether we need to calculate the higher order force constants """
-        Calc_anharmonic_FCs = False
-        if Calc_anharmonic_FCs:
-            from alm import ALM
-            supercell_z = phonon.supercell
-            lattice = supercell_z.cell
-            positions = supercell_z.scaled_positions
-            numbers = supercell_z.numbers
-            natom = len(numbers)
-            with ALM(lattice, positions, numbers) as alm:
-                alm.define(1)
-                alm.suggest()
-                n_fp = alm._get_number_of_irred_fc_elements(1)
+        # Calc_anharmonic_FCs = False
+        # if Calc_anharmonic_FCs:
+        #     from alm import ALM
+        #     supercell_z = phonon.supercell
+        #     lattice = supercell_z.cell
+        #     positions = supercell_z.scaled_positions
+        #     numbers = supercell_z.numbers
+        #     natom = len(numbers)
+        #     with ALM(lattice, positions, numbers) as alm:
+        #         alm.define(1)
+        #         alm.suggest()
+        #         n_fp = alm._get_number_of_irred_fc_elements(1)
 
-            num = int(np.ceil(n_fp / (3.0 * natom)))
-            num_round = int(np.round((n_fp / (3.0 * natom))))
+        #     num = int(np.ceil(n_fp / (3.0 * natom)))
+        #     num_round = int(np.round((n_fp / (3.0 * natom))))
 
-            if num > num_round:
-                num_d = num
-                displacement_t = 0.01
-                phonon.generate_displacements(displacement_t)
-                num_disp_t = len(phonon.displacements)
-                int_num = int(num_disp_t / num_d)
-                if int_num > 3:
-                    num_d = int(np.ceil(int_num / 3.0))
-                else:
-                    num_d = int(np.ceil(int_num / 3.0) + 1)
-            else:
-                num_d = num
-                displacement_t = 0.01
-                phonon.generate_displacements(displacement_t)
-                num_disp_t = len(phonon.displacements)
-                int_num = int(num_disp_t / num_d)
-                if int_num >= 3:
-                    num_d = int(np.ceil(int_num / 3.0))
-                else:
-                    num_d = int(num + 1)
+        #     if num > num_round:
+        #         num_d = num
+        #         displacement_t = 0.01
+        #         phonon.generate_displacements(displacement_t)
+        #         num_disp_t = len(phonon.displacements)
+        #         int_num = int(num_disp_t / num_d)
+        #         if int_num > 3:
+        #             num_d = int(np.ceil(int_num / 3.0))
+        #         else:
+        #             num_d = int(np.ceil(int_num / 3.0) + 1)
+        #     else:
+        #         num_d = num
+        #         displacement_t = 0.01
+        #         phonon.generate_displacements(displacement_t)
+        #         num_disp_t = len(phonon.displacements)
+        #         int_num = int(num_disp_t / num_d)
+        #         if int_num >= 3:
+        #             num_d = int(np.ceil(int_num / 3.0))
+        #         else:
+        #             num_d = int(num + 1)
 
-            displacement_f = 0.01
-            phonon.generate_displacements(distance=displacement_f)
-            disps = phonon.displacements
+        #     displacement_f = 0.01
+        #     phonon.generate_displacements(distance=displacement_f)
+        #     disps = phonon.displacements
 
-            f_disp_n = int(len(disps))
-            if f_disp_n > 2:
-                num_har = num_d
-            else:
-                num_har = f_disp_n
-        else:
-            num_har = n_shape
+        #     f_disp_n = int(len(disps))
+        #     if f_disp_n > 2:
+        #         num_har = num_d
+        #     else:
+        #         num_har = f_disp_n
+        # else:
+        #     num_har = n_shape
 
 
         #set_of_forces = [np.array(forces) for forces in displacement_data["forces"]]
@@ -527,110 +527,110 @@ class PhononBSDOSDoc(StructureMetadata, extra="allow"):  # type: ignore[call-arg
         )
 
          # jiongzhi zheng
-        if imaginary_modes:
-            # Define a cluster space using the largest cutoff you can
-            max_cutoff = estimate_maximum_cutoff(supercell) - 0.01
-            cutoffs = [max_cutoff]  # only second order needed
-            cs = ClusterSpace(prim, cutoffs)
+        # if imaginary_modes:
+        #     # Define a cluster space using the largest cutoff you can
+        #     max_cutoff = estimate_maximum_cutoff(supercell) - 0.01
+        #     cutoffs = [max_cutoff]  # only second order needed
+        #     cs = ClusterSpace(prim, cutoffs)
 
-            # import the phonopy force constants using the correct supercell also provided by phonopy
-            fcs = ForceConstants.read_phonopy(supercell, 'FORCE_CONSTANTS')
-            # Find the parameters that best fits the force constants given you cluster space
-            parameters = extract_parameters(fcs, cs)
-            # Enforce the rotational sum rules
-            parameters_rot = enforce_rotational_sum_rules(cs, parameters, ['Huang','Born-Huang'], alpha=1e-6)
-            # use the new parameters to make a fcp and then create the force constants and write to a phonopy file
+        #     # import the phonopy force constants using the correct supercell also provided by phonopy
+        #     fcs = ForceConstants.read_phonopy(supercell, 'FORCE_CONSTANTS')
+        #     # Find the parameters that best fits the force constants given you cluster space
+        #     parameters = extract_parameters(fcs, cs)
+        #     # Enforce the rotational sum rules
+        #     parameters_rot = enforce_rotational_sum_rules(cs, parameters, ['Huang','Born-Huang'], alpha=1e-6)
+        #     # use the new parameters to make a fcp and then create the force constants and write to a phonopy file
 
-            fcp = ForceConstantPotential(cs, parameters_rot)
-            fcs = fcp.get_force_constants(supercell)
-            fcs.write_to_phonopy('FORCE_CONSTANTS_new', format='text')
+        #     fcp = ForceConstantPotential(cs, parameters_rot)
+        #     fcs = fcp.get_force_constants(supercell)
+        #     fcs.write_to_phonopy('FORCE_CONSTANTS_new', format='text')
 
-            force_constants = parse_FORCE_CONSTANTS(filename="FORCE_CONSTANTS_new")
-            phonon.force_constants = force_constants
-            phonon.symmetrize_force_constants()
+        #     force_constants = parse_FORCE_CONSTANTS(filename="FORCE_CONSTANTS_new")
+        #     phonon.force_constants = force_constants
+        #     phonon.symmetrize_force_constants()
 
-            phonon.run_band_structure(qpoints, path_connections=connections, with_eigenvectors=True)
-            phonon.write_yaml_band_structure(filename=filename_band_yaml)
-            bs_symm_line = get_ph_bs_symm_line(filename_band_yaml, labels_dict=kpath_dict, has_nac=born is not None)
+        #     phonon.run_band_structure(qpoints, path_connections=connections, with_eigenvectors=True)
+        #     phonon.write_yaml_band_structure(filename=filename_band_yaml)
+        #     bs_symm_line = get_ph_bs_symm_line(filename_band_yaml, labels_dict=kpath_dict, has_nac=born is not None)
 
-            new_plotter = PhononBSPlotter(bs=bs_symm_line)
+        #     new_plotter = PhononBSPlotter(bs=bs_symm_line)
 
-            new_plotter.save_plot(
-            filename=kwargs.get("filename_bs", "phonon_band_structure.pdf"),
-            units=kwargs.get("units", "THz"),
-        )
-            imaginary_modes_hiphive = bs_symm_line.has_imaginary_freq(
-            tol=kwargs.get("tol_imaginary_modes", 1e-5)
-        )
+        #     new_plotter.save_plot(
+        #     filename=kwargs.get("filename_bs", "phonon_band_structure.pdf"),
+        #     units=kwargs.get("units", "THz"),
+        # )
+        #     imaginary_modes_hiphive = bs_symm_line.has_imaginary_freq(
+        #     tol=kwargs.get("tol_imaginary_modes", 1e-5)
+        # )
 
-        else:
-           imaginary_modes_hiphive = False
-           imaginary_modes = False
+        # else:
+        #    imaginary_modes_hiphive = False
+        #    imaginary_modes = False
 
-        if imaginary_modes_hiphive:
-            pheasy_cmd_11 = 'pheasy --dim "{0}" "{1}" "{2}" -s -w 2 --c2 10.0 --symprec 1e-3 --nbody 2'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]))
-            pheasy_cmd_12 = 'pheasy --dim "{0}" "{1}" "{2}" -c --symprec 1e-3 --c2 10.0 -w 2'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]))
-            pheasy_cmd_13 = 'pheasy --dim "{0}" "{1}" "{2}" -w 2 -d --symprec 1e-3 --c2 10.0 --ndata "{3}" --disp_file'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]), int(num_har))
+        # if imaginary_modes_hiphive:
+        #     pheasy_cmd_11 = 'pheasy --dim "{0}" "{1}" "{2}" -s -w 2 --c2 10.0 --symprec 1e-3 --nbody 2'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]))
+        #     pheasy_cmd_12 = 'pheasy --dim "{0}" "{1}" "{2}" -c --symprec 1e-3 --c2 10.0 -w 2'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]))
+        #     pheasy_cmd_13 = 'pheasy --dim "{0}" "{1}" "{2}" -w 2 -d --symprec 1e-3 --c2 10.0 --ndata "{3}" --disp_file'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]), int(num_har))
 
-            displacement_f = 0.01
-            phonon.generate_displacements(distance=displacement_f)
-            disps = phonon.displacements
-            num_judge = len(disps)
+        #     displacement_f = 0.01
+        #     phonon.generate_displacements(distance=displacement_f)
+        #     disps = phonon.displacements
+        #     num_judge = len(disps)
 
-            if num_judge > 3:
-                pheasy_cmd_14 = 'pheasy --dim "{0}" "{1}" "{2}" -f --c2 10.0 --full_ifc -w 2 --symprec 1e-3 -l LASSO --std --rasr BHH --ndata "{3}"'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]), int(num_har))
-            else:
-                pheasy_cmd_14 = 'pheasy --dim "{0}" "{1}" "{2}" -f --full_ifc --c2 10.0 -w 2 --symprec 1e-3 --rasr BHH --ndata "{3}"'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]), int(num_har))
-            #pheasy_cmd_4_1 = 'pheasy --dim "{0}" "{1}" "{2}" -f --full_ifc -w 2 --hdf5 --symprec 1e-3 --rasr BHH --ndata "{3}"'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]), int(num_har))
+        #     if num_judge > 3:
+        #         pheasy_cmd_14 = 'pheasy --dim "{0}" "{1}" "{2}" -f --c2 10.0 --full_ifc -w 2 --symprec 1e-3 -l LASSO --std --rasr BHH --ndata "{3}"'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]), int(num_har))
+        #     else:
+        #         pheasy_cmd_14 = 'pheasy --dim "{0}" "{1}" "{2}" -f --full_ifc --c2 10.0 -w 2 --symprec 1e-3 --rasr BHH --ndata "{3}"'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]), int(num_har))
+        #     #pheasy_cmd_4_1 = 'pheasy --dim "{0}" "{1}" "{2}" -f --full_ifc -w 2 --hdf5 --symprec 1e-3 --rasr BHH --ndata "{3}"'.format(int(supercell_matrix[0][0]), int(supercell_matrix[1][1]), int(supercell_matrix[2][2]), int(num_har))
 
-            print ("Start running pheasy in discovery")
-            subprocess.call(pheasy_cmd_11, shell=True)
-            subprocess.call(pheasy_cmd_12, shell=True)
-            subprocess.call(pheasy_cmd_13, shell=True)
-            subprocess.call(pheasy_cmd_14, shell=True)
+        #     print ("Start running pheasy in discovery")
+        #     subprocess.call(pheasy_cmd_11, shell=True)
+        #     subprocess.call(pheasy_cmd_12, shell=True)
+        #     subprocess.call(pheasy_cmd_13, shell=True)
+        #     subprocess.call(pheasy_cmd_14, shell=True)
 
-            force_constants = parse_FORCE_CONSTANTS(filename="FORCE_CONSTANTS")
-            phonon.force_constants = force_constants
-            phonon.symmetrize_force_constants()
+        #     force_constants = parse_FORCE_CONSTANTS(filename="FORCE_CONSTANTS")
+        #     phonon.force_constants = force_constants
+        #     phonon.symmetrize_force_constants()
 
 
-            #phonon.force_constants = fcs
+        #     #phonon.force_constants = fcs
 
-            # with phonon.load("phonopy.yaml") the phonopy API can be used
-            phonon.save("phonopy.yaml")
+        #     # with phonon.load("phonopy.yaml") the phonopy API can be used
+        #     phonon.save("phonopy.yaml")
 
-            # get phonon band structure
-            kpath_dict, kpath_concrete = cls.get_kpath(
-                structure=get_pmg_structure(phonon.primitive),
-                kpath_scheme=kpath_scheme,
-                symprec=symprec,
-            )
+        #     # get phonon band structure
+        #     kpath_dict, kpath_concrete = cls.get_kpath(
+        #         structure=get_pmg_structure(phonon.primitive),
+        #         kpath_scheme=kpath_scheme,
+        #         symprec=symprec,
+        #     )
 
-            npoints_band = kwargs.get("npoints_band", 101)
-            qpoints, connections = get_band_qpoints_and_path_connections(
-                kpath_concrete, npoints=kwargs.get("npoints_band", 101)
-            )
+        #     npoints_band = kwargs.get("npoints_band", 101)
+        #     qpoints, connections = get_band_qpoints_and_path_connections(
+        #         kpath_concrete, npoints=kwargs.get("npoints_band", 101)
+        #     )
 
-            # phonon band structures will always be cmouted
-            filename_band_yaml = "phonon_band_structure.yaml"
-            phonon.run_band_structure(
-                qpoints, path_connections=connections, with_eigenvectors=True
-            )
-            phonon.write_yaml_band_structure(filename=filename_band_yaml)
-            bs_symm_line = get_ph_bs_symm_line(
-                filename_band_yaml, labels_dict=kpath_dict, has_nac=born is not None
-            )
-            new_plotter = PhononBSPlotter(bs=bs_symm_line)
+        #     # phonon band structures will always be cmouted
+        #     filename_band_yaml = "phonon_band_structure.yaml"
+        #     phonon.run_band_structure(
+        #         qpoints, path_connections=connections, with_eigenvectors=True
+        #     )
+        #     phonon.write_yaml_band_structure(filename=filename_band_yaml)
+        #     bs_symm_line = get_ph_bs_symm_line(
+        #         filename_band_yaml, labels_dict=kpath_dict, has_nac=born is not None
+        #     )
+        #     new_plotter = PhononBSPlotter(bs=bs_symm_line)
 
-            new_plotter.save_plot(
-            filename=kwargs.get("filename_bs", "phonon_band_structure.pdf"),
-            units=kwargs.get("units", "THz"),
-        )
-            imaginary_modes_cutoff = bs_symm_line.has_imaginary_freq(
-            tol=kwargs.get("tol_imaginary_modes", 1e-5))
-            imaginary_modes = imaginary_modes_cutoff
-        else:
-            pass
+        #     new_plotter.save_plot(
+        #     filename=kwargs.get("filename_bs", "phonon_band_structure.pdf"),
+        #     units=kwargs.get("units", "THz"),
+        # )
+        #     imaginary_modes_cutoff = bs_symm_line.has_imaginary_freq(
+        #     tol=kwargs.get("tol_imaginary_modes", 1e-5))
+        #     imaginary_modes = imaginary_modes_cutoff
+        # else:
+        #     pass
 
 
         # gets data for visualization on website - yaml is also enough
