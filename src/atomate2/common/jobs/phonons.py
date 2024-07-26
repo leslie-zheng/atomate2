@@ -600,7 +600,7 @@ def run_phonon_displacements(
                 "displacement_number": idx,
                 "original_structure": structure,
                 "supercell_matrix": supercell_matrix,
-                "displaced_structures": displacement,
+                "displaced_structures": displacements,
             }
             with contextlib.suppress(Exception):
                 phonon_job.update_maker_kwargs(

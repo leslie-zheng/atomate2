@@ -417,6 +417,7 @@ class PhononBSDOSDoc(StructureMetadata, extra="allow"):  # type: ignore[call-arg
 
 
         #set_of_forces = [np.array(forces) for forces in displacement_data["forces"]]
+        num_har = n_shape
         
         if born is not None and epsilon_static is not None:
             if len(structure) == len(born):
