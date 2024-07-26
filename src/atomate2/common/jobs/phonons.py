@@ -563,6 +563,7 @@ def run_phonon_displacements(
         "forces": [],
         "uuids": [],
         "dirs": [],
+        "displaced_structures": [],
     }
     phonon_job_kwargs = {}
     if prev_dir is not None and prev_dir_argname is not None:
@@ -599,7 +600,7 @@ def run_phonon_displacements(
                 "displacement_number": idx,
                 "original_structure": structure,
                 "supercell_matrix": supercell_matrix,
-                "displaced_structure": displacement,
+                "displaced_structures": displacement,
             }
             with contextlib.suppress(Exception):
                 phonon_job.update_maker_kwargs(
