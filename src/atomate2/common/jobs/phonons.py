@@ -127,22 +127,22 @@ def add_new_structure(structure: Structure,
 
     return displacements
 
-
+@job
 def add_displacement_data(dispaclacement_data, new_job):
+    print(len(dispaclacement_data["uuids"]))
 
-
-    dispaclacement_data["uuids"].append(new_job.output.uuid)
-    dispaclacement_data["dirs"].append(new_job.output.dir_name)
-    dispaclacement_data["forces"].append(new_job.output.output.forces)
+    dispaclacement_data["uuids"].extend(new_job["uuids"])
+    dispaclacement_data["dirs"].extend(new_job["dirs"])
+    dispaclacement_data["forces"].extend(new_job["forces"])
     # added by jiongzhi zheng
-    dispaclacement_data["displaced_structures"].append(new_job.output.output.structure)
-
+    dispaclacement_data["displaced_structures"].extend(new_job["displaced_structures"])
+    print(len(dispaclacement_data["uuids"]))
     return dispaclacement_data
 
 
 
 @job
-def check_convergence(band_structure1, band_structure2, structure, phonon_maker: BaseVaspMaker | ForceFieldStaticMaker | BaseAimsMaker, displacement_data,
+def check_convergence(band_structure1: PhononBandStructureSymmLine, band_structure2: PhononBandStructureSymmLine, structure, phonon_maker: BaseVaspMaker | ForceFieldStaticMaker | BaseAimsMaker, displacement_data,
                       supercell_matrix: np.array, displacement: float, sym_reduce: bool, symprec: float,
                       use_symmetrized_structure: str | None, kpath_scheme: str, code: str, mp_id: str,
                       total_dft_energy: float, epsilon_static: Matrix3D = None,
@@ -159,20 +159,21 @@ def check_convergence(band_structure1, band_structure2, structure, phonon_maker:
     jobs=[]
     error = 0 # do your error computation for the band structures here
 
-    phonon_energies_1 = band_structure1.from_dict["frequency"]
-    phonon_energies_2 = band_structure2.from_dict["frequency"]
-
+    phonon_energies_1 = np.array(band_structure1.nac_frequencies)
+    phonon_energies_2 = np.array(band_structure2.nac_frequencies)
+    print(phonon_energies_1)
+    print(phonon_energies_2)
     # phonon_energies_1 and phonon_energies_2 are the two dimensional list of phonon frequencies
     # transfer them to two dimensional matrix and calculate the error: list to matrix
     error = np.linalg.norm((phonon_energies_1 - phonon_energies_2)/phonon_energies_1)
-
+    print(error)
     #for i in range(len(phonon_energies_1)):
     #    for j in range(len(phonon_energies_1[i])):
     #        error += (phonon_energies_1[i][j] - phonon_energies_2[i][j]) **2
     #error = error ** 0.5
 
     # change here
-    if error< 1:
+    if error< 1e-3:
         return {"converged": True, "error": error}
     # generate a new structure here with your methods from structure
     else:
