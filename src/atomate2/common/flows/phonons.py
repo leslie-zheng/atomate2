@@ -368,78 +368,76 @@ class BasePhononMaker(Maker, ABC):
         # add the new structure and displacement data to the flow
 
         
-        # new_displacement = add_new_structure(structure=structure,
-        #     supercell_matrix=supercell_matrix,
-        #     displacement=self.displacement,
-        #     sym_reduce=self.sym_reduce,
-        #     symprec=self.symprec,
-        #     use_symmetrized_structure=self.use_symmetrized_structure,
-        #     kpath_scheme=self.kpath_scheme,
-        #     code=self.code,)
-        # jobs.append(new_displacement)
+        new_displacement = add_new_structure(structure=structure,
+             supercell_matrix=supercell_matrix,
+             displacement=self.displacement,
+             sym_reduce=self.sym_reduce,
+             symprec=self.symprec,
+             use_symmetrized_structure=self.use_symmetrized_structure,
+             kpath_scheme=self.kpath_scheme,
+             code=self.code,)
+        jobs.append(new_displacement)
 
-        #jobs.append(new_structure)
-        # new_displacement_calcs = run_phonon_displacements(
-        #     displacements=new_displacement.output,
-        #     structure=structure,
-        #     supercell_matrix=supercell_matrix,
-        #     phonon_maker=self.phonon_displacement_maker,
-        #     socket=self.socket,
-        #     prev_dir_argname=self.prev_calc_dir_argname,
-        #     prev_dir=prev_dir,
-        # )
-        # jobs.append(new_displacement_calcs)
+        new_displacement_calcs = run_phonon_displacements(
+            displacements=new_displacement.output,
+            structure=structure,
+            supercell_matrix=supercell_matrix,
+            phonon_maker=self.phonon_displacement_maker,
+            socket=self.socket,
+            prev_dir_argname=self.prev_calc_dir_argname,
+            prev_dir=prev_dir,
+        )
+        jobs.append(new_displacement_calcs)
 
-        # updated_displacements=add_displacement_data(displacement_calcs.output, new_displacement_calcs.output)
+        updated_displacements=add_displacement_data(displacement_calcs.output, new_displacement_calcs.output)
 
-        # jobs.append(updated_displacements)
+        jobs.append(updated_displacements)
 
          # now use your updated displacements with the additional displacement
-        # phonon_collect2=generate_frequencies_eigenvectors(supercell_matrix=supercell_matrix,
-        #     displacement=self.displacement,
-        #     sym_reduce=self.sym_reduce,
-        #     symprec=self.symprec,
-        #     use_symmetrized_structure=self.use_symmetrized_structure,
-        #     kpath_scheme=self.kpath_scheme,
-        #     code=self.code,
-        #     mp_id=self.mp_id,
-        #     structure=structure,
-        #     displacement_data=updated_displacements.output,
-        #     epsilon_static=epsilon_static,
-        #     born=born,
-        #     total_dft_energy=total_dft_energy,
-        #     static_run_job_dir=static_run_job_dir,
-        #     static_run_uuid=static_run_uuid,
-        #     born_run_job_dir=born_run_job_dir,
-        #     born_run_uuid=born_run_uuid,
-        #     optimization_run_job_dir=optimization_run_job_dir,
-        #     optimization_run_uuid=optimization_run_uuid,
-        #     create_thermal_displacements=self.create_thermal_displacements,
-        #     store_force_constants=self.store_force_constants,
-        #     **self.generate_frequencies_eigenvectors_kwargs)
-        
-        # jobs.append(phonon_collect2)
+        phonon_collect2=generate_frequencies_eigenvectors(supercell_matrix=supercell_matrix,
+            displacement=self.displacement,
+            sym_reduce=self.sym_reduce,
+            symprec=self.symprec,
+            use_symmetrized_structure=self.use_symmetrized_structure,
+            kpath_scheme=self.kpath_scheme,
+            code=self.code,
+            mp_id=self.mp_id,
+            structure=structure,
+             displacement_data=updated_displacements.output,
+             epsilon_static=epsilon_static,
+            born=born,
+            total_dft_energy=total_dft_energy,
+            static_run_job_dir=static_run_job_dir,
+            static_run_uuid=static_run_uuid,
+             born_run_job_dir=born_run_job_dir,
+            born_run_uuid=born_run_uuid,
+            optimization_run_job_dir=optimization_run_job_dir,
+             optimization_run_uuid=optimization_run_uuid,
+             create_thermal_displacements=self.create_thermal_displacements,
+             store_force_constants=self.store_force_constants,
+             **self.generate_frequencies_eigenvectors_kwargs)
+        jobs.append(phonon_collect2)
 
-        # check_convergenced = check_convergence(phonon_collect.phonon_bandstructure, 
-        #     phonon_collect2.phonon_bandstructure, 
-        #     supercell_matrix=supercell_matrix,
-        #     displacement=self.displacement,
-        #     sym_reduce=self.sym_reduce,
-        #     symprec=self.symprec,
-        #     use_symmetrized_structure=self.use_symmetrized_structure,
-        #     kpath_scheme=self.kpath_scheme,
-        #     code=self.code,
-        #     mp_id=self.mp_id,
-        #     structure=structure,
-        #     displacement_data=updated_displacements.output,
-        #     epsilon_static=epsilon_static,
-        #     born=born,
-        #     total_dft_energy=total_dft_energy,
-        #     **self.generate_frequencies_eigenvectors_kwargs)
+        check_convergenced = check_convergence(phonon_collect.output.phonon_bandstructure,
+            phonon_collect2.output.phonon_bandstructure,
+            supercell_matrix=supercell_matrix,
+            displacement=self.displacement,
+            sym_reduce=self.sym_reduce,
+            symprec=self.symprec,
+            use_symmetrized_structure=self.use_symmetrized_structure,
+            kpath_scheme=self.kpath_scheme,
+            code=self.code,
+            mp_id=self.mp_id,
+            structure=structure,
+            displacement_data=updated_displacements.output,
+            epsilon_static=epsilon_static,
+            born=born,
+            total_dft_energy=total_dft_energy,
+            **self.generate_frequencies_eigenvectors_kwargs)
         
-        # jobs.append(check_convergenced)
+        jobs.append(check_convergenced)
 
-        # create a flow including all jobs for a phonon computation
+        #create a flow including all jobs for a phonon computation
         return Flow(jobs, phonon_collect.output)
 
     @property

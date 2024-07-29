@@ -127,7 +127,7 @@ def add_new_structure(structure: Structure,
 
     return displacements
 
-
+@job
 def add_displacement_data(dispaclacement_data, new_job):
 
 
