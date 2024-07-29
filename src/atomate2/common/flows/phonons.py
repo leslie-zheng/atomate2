@@ -420,6 +420,7 @@ class BasePhononMaker(Maker, ABC):
 
         check_convergenced = check_convergence(phonon_collect.output.phonon_bandstructure,
             phonon_collect2.output.phonon_bandstructure,
+            phonon_maker=self.phonon_displacement_maker,
             supercell_matrix=supercell_matrix,
             displacement=self.displacement,
             sym_reduce=self.sym_reduce,

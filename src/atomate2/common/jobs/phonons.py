@@ -129,13 +129,13 @@ def add_new_structure(structure: Structure,
 
 @job
 def add_displacement_data(dispaclacement_data, new_job):
+    print(new_job.keys())
 
-
-    dispaclacement_data["uuids"].append(new_job.output.uuid)
-    dispaclacement_data["dirs"].append(new_job.output.dir_name)
-    dispaclacement_data["forces"].append(new_job.output.output.forces)
+    dispaclacement_data["uuids"].extend(new_job["uuids"])
+    dispaclacement_data["dirs"].extend(new_job["dirs"])
+    dispaclacement_data["forces"].extend(new_job["forces"])
     # added by jiongzhi zheng
-    dispaclacement_data["displaced_structures"].append(new_job.output.output.structure)
+    dispaclacement_data["displaced_structures"].extend(new_job["displaced_structures"])
 
     return dispaclacement_data
 
