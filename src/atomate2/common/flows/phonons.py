@@ -362,6 +362,13 @@ class BasePhononMaker(Maker, ABC):
             store_force_constants=self.store_force_constants,
             **self.generate_frequencies_eigenvectors_kwargs,
         )
+        phonon_collect.metadata.update(
+            {
+                "tag": [
+                    f"mp_id={self.mp_id}",
+                ]
+            }
+        )
 
         jobs.append(phonon_collect)
 
@@ -440,7 +447,7 @@ class BasePhononMaker(Maker, ABC):
         # jobs.append(check_convergenced)
 
         # create a flow including all jobs for a phonon computation
-        return Flow(jobs, phonon_collect.output)
+        return Flow(jobs, phonon_collect.output, name=f"{self.mp_id}_{self.name}_pheasy")
 
     @property
     @abstractmethod

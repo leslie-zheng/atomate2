@@ -562,6 +562,7 @@ def run_phonon_displacements(
         "forces": [],
         "uuids": [],
         "dirs": [],
+        "displaced_structures": []
     }
     phonon_job_kwargs = {}
     if prev_dir is not None and prev_dir_argname is not None:

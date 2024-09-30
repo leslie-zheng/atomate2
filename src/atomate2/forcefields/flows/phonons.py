@@ -11,6 +11,8 @@ from atomate2.forcefields.jobs import (
     CHGNetStaticMaker,
     ForceFieldRelaxMaker,
     ForceFieldStaticMaker,
+    MACERelaxMaker,
+    MACEStaticMaker
 )
 
 
@@ -119,13 +121,13 @@ class PhononMaker(BasePhononMaker):
     get_supercell_size_kwargs: dict = field(default_factory=dict)
     use_symmetrized_structure: Literal["primitive", "conventional"] | None = None
     bulk_relax_maker: ForceFieldRelaxMaker | None = field(
-        default_factory=lambda: CHGNetRelaxMaker(relax_kwargs={"fmax": 0.00001})
+        default_factory=lambda: MACERelaxMaker(relax_kwargs={"fmax": 0.00001})
     )
     static_energy_maker: ForceFieldStaticMaker | None = field(
-        default_factory=CHGNetStaticMaker
+        default_factory=MACEStaticMaker
     )
     phonon_displacement_maker: ForceFieldStaticMaker = field(
-        default_factory=CHGNetStaticMaker
+        default_factory=MACEStaticMaker
     )
     create_thermal_displacements: bool = False
     generate_frequencies_eigenvectors_kwargs: dict = field(default_factory=dict)
