@@ -332,6 +332,25 @@ class BasePhononMaker(Maker, ABC):
         )
         jobs.append(displacements)
 
+        # perform the first phonon displacement calculation for the last equilibrium structure
+        displacement_calcs_equilibrium = run_phonon_displacements(
+            displacements=displacements.output[-1], # -1 is the last equilibrium structure
+            structure=structure,
+            supercell_matrix=supercell_matrix,
+            phonon_maker=self.phonon_displacement_maker,
+            socket=self.socket,
+            prev_dir_argname=self.prev_calc_dir_argname,
+            prev_dir=prev_dir,
+        )
+        jobs.append(displacement_calcs_equilibrium)
+
+        # perform the phonon displacement calculations for the rest of the structures,
+        # I need to create a new run_phonon_displacements here, still thinking about
+        # the best way to do this
+
+
+
+
         # perform the phonon displacement calculations
         displacement_calcs = run_phonon_displacements(
             displacements=displacements.output,
