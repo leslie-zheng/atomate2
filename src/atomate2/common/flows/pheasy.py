@@ -16,6 +16,7 @@ from atomate2.common.jobs.pheasy import (
     run_phonon_displacements,
     run_phonon_equilibrium,
 )
+from atomate2.vasp.files import copy_vasp_outputs
 from atomate2.common.jobs.phonons import get_supercell_size, get_total_energy_per_cell
 from atomate2.common.jobs.utils import structure_to_conventional, structure_to_primitive
 
