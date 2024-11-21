@@ -274,6 +274,103 @@ def generate_frequencies_eigenvectors(
     )
 
 
+# Here, we create a job to run the equailibrium phonon calculation
+@job(data=["forces", "displaced_structures"])
+def run_phonon_equilibrium(
+    displacements: list[Structure],
+    structure: Structure,
+    supercell_matrix: Matrix3D,
+    phonon_maker: BaseVaspMaker | ForceFieldStaticMaker | BaseAimsMaker = None,
+    prev_dir: str | Path = None,
+    prev_dir_argname: str = None,
+    socket: bool = False,
+) -> Flow:
+    """
+    Run equil;ibrium phonon displacements.
+
+    Note, this job will replace itself with one equilibroum displacement calculations,
+    or a single socket calculation for all displacements.
+
+    Parameters
+    ----------
+    displacements: Sequence
+        All displacements to calculate
+    structure: Structure object
+        Fully optimized structure used for phonon computations.
+    supercell_matrix: Matrix3D
+        supercell matrix for meta data
+    phonon_maker : .BaseVaspMaker or .ForceFieldStaticMaker or .BaseAimsMaker
+        A maker to use to generate dispacement calculations
+    prev_dir: str or Path
+        The previous working directory
+    prev_dir_argname: str
+        argument name for the prev_dir variable
+    socket: bool
+        If True use the socket-io interface to increase performance
+    """
+    phonon_jobs = []
+    outputs: dict[str, list] = {
+        "displacement_number": [],
+        "forces": [],
+        "uuids": [],
+        "dirs": [],
+        "displaced_structures": [],
+    }
+    phonon_job_kwargs = {}
+    if prev_dir is not None and prev_dir_argname is not None:
+        phonon_job_kwargs[prev_dir_argname] = prev_dir
+
+    if socket:
+        phonon_job = phonon_maker.make(displacements, **phonon_job_kwargs)
+        info = {
+            "original_structure": structure,
+            "supercell_matrix": supercell_matrix,
+            "displaced_structures": displacements,
+        }
+        phonon_job.update_maker_kwargs(
+            {"_set": {"write_additional_data->phonon_info:json": info}}, dict_mod=True
+        )
+        phonon_jobs.append(phonon_job)
+        outputs["displacement_number"] = list(range(len(displacements)))
+        outputs["uuids"] = [phonon_job.output.uuid] * len(displacements)
+        outputs["dirs"] = [phonon_job.output.dir_name] * len(displacements)
+        outputs["forces"] = phonon_job.output.output.all_forces
+        # add the displaced structures, still need to be careful with the order,
+        # experimental feature
+        outputs["displaced_structures"] = displacements
+    else:
+        for idx, displacement in enumerate(displacements):
+            if prev_dir is not None:
+                phonon_job = phonon_maker.make(displacement, prev_dir=prev_dir)
+            else:
+                phonon_job = phonon_maker.make(displacement)
+            phonon_job.append_name(f"equilibrium_ph_cal {idx + 1}/{len(displacements)}")
+
+            # we will add some meta data
+            info = {
+                "displacement_number": idx,
+                "original_structure": structure,
+                "supercell_matrix": supercell_matrix,
+                "displaced_structure": displacement,
+            }
+            with contextlib.suppress(Exception):
+                phonon_job.update_maker_kwargs(
+                    {"_set": {"write_additional_data->phonon_info:json": info}},
+                    dict_mod=True,
+                )
+            phonon_jobs.append(phonon_job)
+            outputs["displacement_number"].append(idx)
+            outputs["uuids"].append(phonon_job.output.uuid)
+            outputs["dirs"].append(phonon_job.output.dir_name)
+            outputs["forces"].append(phonon_job.output.output.forces)
+            outputs["displaced_structures"].append(displacement)
+    displacement_flow = Flow(phonon_jobs, outputs)
+    return Response(replace=displacement_flow)
+
+
+
+
+
 # I did not directly import this job from the phonon module
 # because I modified the job to pass the displaced structures
 # to the output.
