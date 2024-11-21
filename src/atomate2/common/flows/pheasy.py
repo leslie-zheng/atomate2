@@ -14,6 +14,7 @@ from atomate2.common.jobs.pheasy import (
     generate_frequencies_eigenvectors,
     generate_phonon_displacements,
     run_phonon_displacements,
+    run_phonon_equilibrium,
 )
 from atomate2.common.jobs.phonons import get_supercell_size, get_total_energy_per_cell
 from atomate2.common.jobs.utils import structure_to_conventional, structure_to_primitive
@@ -332,37 +333,6 @@ class BasePhononMaker(Maker, ABC):
         )
         jobs.append(displacements)
 
-        # perform the first phonon displacement calculation for the last equilibrium structure
-        displacement_calcs_equilibrium = run_phonon_displacements(
-            displacements=displacements.output[-1], # -1 is the last equilibrium structure
-            structure=structure,
-            supercell_matrix=supercell_matrix,
-            phonon_maker=self.phonon_displacement_maker,
-            socket=self.socket,
-            prev_dir_argname=self.prev_calc_dir_argname,
-            prev_dir=prev_dir,
-        )
-        jobs.append(displacement_calcs_equilibrium)
-
-        # perform the phonon displacement calculations for the rest of the structures,
-        # I need to create a new run_phonon_displacements here, still thinking about
-        # the best way to do this
-
-
-
-
-        # perform the phonon displacement calculations
-        displacement_calcs = run_phonon_displacements(
-            displacements=displacements.output,
-            structure=structure,
-            supercell_matrix=supercell_matrix,
-            phonon_maker=self.phonon_displacement_maker,
-            socket=self.socket,
-            prev_dir_argname=self.prev_calc_dir_argname,
-            prev_dir=prev_dir,
-        )
-        jobs.append(displacement_calcs)
-
         # Computation of BORN charges
         born_run_job_dir = None
         born_run_uuid = None
@@ -381,6 +351,45 @@ class BasePhononMaker(Maker, ABC):
             born = born_job.output.calcs_reversed[0].output.outcar["born"]
             born_run_job_dir = born_job.output.dir_name
             born_run_uuid = born_job.output.uuid
+
+        # perform the first phonon displacement calculation for the last equilibrium structure
+        displacement_calcs_equilibrium = run_phonon_equilibrium(
+            displacements=displacements.output[-1], # -1 is the last equilibrium structure
+            structure=structure,
+            supercell_matrix=supercell_matrix,
+            phonon_maker=self.phonon_displacement_maker,
+            socket=self.socket,
+            prev_dir_argname=self.prev_calc_dir_argname,
+            prev_dir=prev_dir,
+        )
+        jobs.append(displacement_calcs_equilibrium)
+        self.prev_calc_dir_argname = "prev_dir"
+        prev_dir = displacement_calcs_equilibrium.output.dir_name
+
+        # TODO: this is a temporary solution to copy the WAVECAR.gz file to the next
+        #  calculation directory. This is necessary for the phonon displacement
+        # but i donot think the current implementation is correct!!!!!
+        copy_vasp_kwargs={"additional_vasp_files": ["WAVECAR.gz"]}
+
+
+        # perform the phonon displacement calculations for the rest of the structures,
+        # I need to create a new run_phonon_displacements here, still thinking about
+        # the best way to do this
+
+
+        # perform the phonon displacement calculations
+        displacement_calcs = run_phonon_displacements(
+            #exclude the last equilibrium structure in the last
+            displacements=displacements.output[:-1],
+            structure=structure,
+            supercell_matrix=supercell_matrix,
+            phonon_maker=self.phonon_displacement_maker,
+            socket=self.socket,
+            prev_dir_argname=self.prev_calc_dir_argname,
+            prev_dir=prev_dir,
+        )
+        jobs.append(displacement_calcs)
+
 
         phonon_collect = generate_frequencies_eigenvectors(
             supercell_matrix=supercell_matrix,
