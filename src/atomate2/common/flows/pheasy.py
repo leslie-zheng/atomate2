@@ -364,6 +364,10 @@ class BasePhononMaker(Maker, ABC):
         )
         jobs.append(displacement_calcs_equilibrium)
         self.prev_calc_dir_argname = "prev_dir"
+
+
+        # maybe i also need to change the name of prev_dir to a specific name to link it
+        # to the next calculation, what do you think?
         prev_dir = displacement_calcs_equilibrium.output.dir_name
 
         # TODO: this is a temporary solution to copy the WAVECAR.gz file to the next
