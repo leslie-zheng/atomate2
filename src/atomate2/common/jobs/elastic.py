@@ -169,6 +169,7 @@ def fit_elastic_tensor(
     deformation_data: list[dict],
     equilibrium_stress: Matrix3D | None = None,
     order: int = 2,
+    mp_id: str | None = None,
     fitting_method: str = SETTINGS.ELASTIC_FITTING_METHOD,
     symprec: float = SETTINGS.SYMPREC,
     allow_elastically_unstable_structs: bool = True,
@@ -252,6 +253,7 @@ def fit_elastic_tensor(
         order=order,
         equilibrium_stress=equilibrium_stress,
         symprec=symprec,
+        mp_id=mp_id,
         allow_elastically_unstable_structs=allow_elastically_unstable_structs,
         failed_uuids=failed_uuids,
     )

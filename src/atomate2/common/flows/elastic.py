@@ -78,6 +78,7 @@ class BaseElasticMaker(Maker, ABC):
     order: int = 2
     sym_reduce: bool = True
     symprec: float = SETTINGS.SYMPREC
+    mp_id: str = None
     bulk_relax_maker: BaseAimsMaker | BaseVaspMaker | ForceFieldRelaxMaker | None = None
     elastic_relax_maker: BaseAimsMaker | BaseVaspMaker | ForceFieldRelaxMaker = (
         None  # constant volume optimization
@@ -146,6 +147,7 @@ class BaseElasticMaker(Maker, ABC):
             vasp_deformation_calcs.output,
             equilibrium_stress=equilibrium_stress,
             order=self.order,
+            mp_id=self.mp_id,
             symprec=self.symprec if self.sym_reduce else None,
             stress_sign_factor=self.stress_sign_correction,
             max_failed_deformations=self.max_failed_deformations,

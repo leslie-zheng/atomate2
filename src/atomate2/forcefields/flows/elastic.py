@@ -60,6 +60,7 @@ class ElasticMaker(BaseElasticMaker):
     order: int = 2
     sym_reduce: bool = True
     symprec: float = SETTINGS.SYMPREC
+    mp_id: str = None
     bulk_relax_maker: ForceFieldRelaxMaker | None = field(
         default_factory=lambda: ForceFieldRelaxMaker(
             force_field_name="CHGNet",

@@ -162,6 +162,7 @@ class ElasticDocument(StructureMetadata):
         deformations: list[Deformation],
         uuids: list[str],
         job_dirs: list[str],
+        mp_id: Optional[str] = None,
         fitting_method: str = SETTINGS.ELASTIC_FITTING_METHOD,
         order: Optional[int] = None,
         equilibrium_stress: Optional[Matrix3D] = None,
@@ -266,6 +267,7 @@ class ElasticDocument(StructureMetadata):
             elastic_tensor=ElasticTensorDocument(
                 raw=result.voigt.tolist(), ieee_format=ieee.voigt.tolist()
             ),
+            mp_id=mp_id,
             fitting_data=FittingData(
                 cauchy_stresses=[s.tolist() for s in stresses],
                 strains=[s.tolist() for s in strains],

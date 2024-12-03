@@ -66,6 +66,7 @@ class ElasticMaker(BaseElasticMaker):
     order: int = 2
     sym_reduce: bool = True
     symprec: float = SETTINGS.SYMPREC
+    mp_id: str = None
     bulk_relax_maker: BaseVaspMaker | None = field(
         default_factory=lambda: DoubleRelaxMaker.from_relax_maker(TightRelaxMaker())
     )
