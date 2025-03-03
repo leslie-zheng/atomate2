@@ -153,6 +153,7 @@ class ElasticDocument(StructureMetadata):
         None, description="Order of the expansion of the elastic tensor."
     )
     warnings: Optional[list[str]] = Field(None, description="Warnings.")
+    mp_id: Optional[str] = Field(None, description="Materials Project ID.")
 
     @classmethod
     def from_stresses(
