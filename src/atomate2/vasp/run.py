@@ -119,8 +119,28 @@ def run_vasp(
     vasp_job_kwargs = vasp_job_kwargs or {}
     custodian_kwargs = custodian_kwargs or {}
 
+
+    # import socket
+    # my_node = socket.gethostname()
+
+
     vasp_cmd = expandvars(vasp_cmd)
     vasp_gamma_cmd = expandvars(vasp_gamma_cmd)
+
+
+    # # Inject -N1 -w <hostname> *after* 'srun' in both commands. Noet that this set of if statements have been added by HS & JZ
+    # # if vasp_cmd.startswith("srun"):
+    # if vasp_cmd.strip().startswith("srun"):
+    #     vasp_cmd = vasp_cmd.replace("srun", f"srun -N1 -w {my_node}", 1)
+    # # if vasp_gamma_cmd.startswith("srun"):
+    # if vasp_gamma_cmd.strip().startswith("srun"):
+    #     vasp_gamma_cmd = vasp_gamma_cmd.replace("srun", f"srun -N1 -w {my_node}", 1)
+
+
+    # logger.info(f"Patched vasp_cmd: {vasp_cmd}")
+    # logger.info(f"Patched vasp_gamma_cmd: {vasp_gamma_cmd}")
+
+
     split_vasp_cmd = shlex.split(vasp_cmd)
     split_vasp_gamma_cmd = shlex.split(vasp_gamma_cmd)
 
