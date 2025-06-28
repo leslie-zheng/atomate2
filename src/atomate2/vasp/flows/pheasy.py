@@ -51,11 +51,8 @@ class PhononMaker(BasePhononMaker):
         and to handle all symmetry-related tasks in phonopy
     displacement: float = 0.01
         displacement distance for phonons
-    min_length: float = 20.0
+    min_length: float = 12.0
         min length of the supercell that will be built
-    prefer_90_degrees: bool = True
-        if set to True, supercell algorithm will first try to find a supercell
-        with 3 90 degree angles
     get_supercell_size_kwargs: dict = {}
         kwargs that will be passed to get_supercell_size to determine supercell size
     use_symmetrized_structure: str or None = None
@@ -122,12 +119,9 @@ class PhononMaker(BasePhononMaker):
     num_displaced_supercells: int = 0
     num_disp_anhar: int = 0
     fcs_cutoff_radius: list = field(default_factory=lambda: [-1, 12, 10])
-    min_length: float | None = 8.0
-    max_atoms: float | None = 200
+    min_length: float | None = 12.0
     force_90_degrees: bool = True
     force_diagonal: bool = True
-    allow_orthorhombic: bool = False
-    prefer_90_degrees: bool = True
     get_supercell_size_kwargs: dict = field(default_factory=dict)
     use_symmetrized_structure: str | None = None
     create_thermal_displacements: bool = False

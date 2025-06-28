@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import math
 import warnings
 from typing import TYPE_CHECKING
 
@@ -39,12 +40,15 @@ logger = logging.getLogger(__name__)
 def get_supercell_size(
     structure: Structure,
     min_length: float,
-    max_atoms: int,
     force_90_degrees: bool,
     force_diagonal: bool,
 ) -> list[list[float]]:
     """
-    Determine supercell size with given min_length and max_length.
+    Determine supercell size with the following rule.
+
+      - Any axis > 8 Å → leave at 1x
+      - Any axis ≤ 8 Å → scale it diagonally so that it becomes ≥ 12 Å
+      - If all axes ≤ 8 Å, fall back to CubicSupercellTransformation.
 
     Parameters
     ----------
@@ -52,18 +56,26 @@ def get_supercell_size(
         Input structure that will be used to determine supercell
     min_length: float
         minimum length of cell in Angstrom
-    max_length: float
-        maximum length of cell in Angstrom
-    prefer_90_degrees: bool
+    force_90_degrees: bool
         if True, the algorithm will try to find a cell with 90 degree angles first
-    allow_orthorhombic: bool
-        if True, orthorhombic supercells are allowed
-    **kwargs:
-        Additional parameters that can be set.
+    force_diagonal: bool
+        if True, the algorithm will try to scale the cell diagonally.
     """
+    abc = structure.lattice.abc
+    oversized = [L > 8.0 for L in abc]
+
+    # if any axis is oversized, keep it at 1x and scale others to min_length
+    if any(oversized):
+        mults = [
+            1 if is_big else math.ceil(12.0 / L)
+            for L, is_big in zip(abc, oversized, strict=False)
+        ]
+        mat = np.diag(mults)
+        return mat.transpose().tolist()
+
+    # if no axis is oversized, use CubicSupercellTransformation
     transformation = CubicSupercellTransformation(
         min_length=min_length,
-        max_atoms=max_atoms,
         force_90_degrees=force_90_degrees,
         force_diagonal=force_diagonal,
         angle_tolerance=1e-2,

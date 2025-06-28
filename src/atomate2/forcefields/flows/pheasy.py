@@ -48,9 +48,6 @@ class PhononMaker(BasePhononMaker):
         displacement distance for phonons
     min_length: float
         min length of the supercell that will be built
-    prefer_90_degrees: bool
-        if set to True, supercell algorithm will first try to find a supercell
-        with 3 90 degree angles
     get_supercell_size_kwargs: dict
         kwargs that will be passed to get_supercell_size to determine supercell size
     use_symmetrized_structure: str
@@ -110,8 +107,9 @@ class PhononMaker(BasePhononMaker):
     sym_reduce: bool = True
     symprec: float = SETTINGS.PHONON_SYMPREC
     displacement: float = 0.01
-    min_length: float | None = 20.0
-    prefer_90_degrees: bool = True
+    min_length: float | None = 12
+    force_90_degrees: bool = True
+    force_diagonal: bool = True
     get_supercell_size_kwargs: dict = field(default_factory=dict)
     use_symmetrized_structure: Literal["primitive", "conventional"] | None = None
     bulk_relax_maker: ForceFieldRelaxMaker | None = field(

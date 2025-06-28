@@ -101,11 +101,8 @@ class BasePhononMaker(Maker, ABC):
         is 10 Bohr. Generally, the default value is good enough.
     min_length: float
         minimum length of lattice constants will be used to create the supercell,
-        the default value is 14.0 A. In most cases, the default value is good
+        the default value is 12.0 A. In most cases, the default value is good
         enough, but it can be increased for larger supercells.
-    prefer_90_degrees: bool
-        if set to True, supercell algorithm will first try to find a supercell
-        with 3 90 degree angles.
     get_supercell_size_kwargs: dict
         kwargs that will be passed to get_supercell_size to determine supercell size
     use_symmetrized_structure: str
@@ -180,8 +177,7 @@ class BasePhononMaker(Maker, ABC):
     cal_ther_cond: bool = False
     ther_cond_mesh: list = field(default_factory=lambda: [20, 20, 20])
     ther_cond_temp: list = field(default_factory=lambda: [100, 700, 100])
-    min_length: float | None = 8.0
-    max_atoms: float | None = 200
+    min_length: float | None = 12.0
     force_90_degrees: bool = True
     force_diagonal: bool = True
     get_supercell_size_kwargs: dict = field(default_factory=dict)
@@ -309,7 +305,6 @@ class BasePhononMaker(Maker, ABC):
             supercell_job = get_supercell_size(
                 structure,
                 self.min_length,
-                self.max_atoms,
                 self.force_90_degrees,
                 self.force_diagonal,
             )
