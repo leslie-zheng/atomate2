@@ -68,7 +68,7 @@ def get_supercell_size(
     if any(oversized):
         mults = [
             1 if is_big else math.ceil(12.0 / L)
-            for L, is_big in zip(abc, oversized, strict=False)
+            for L, is_big in zip(abc, oversized)
         ]
         mat = np.diag(mults)
         return mat.transpose().tolist()
