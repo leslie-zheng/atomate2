@@ -134,18 +134,18 @@ class PhononMaker(BasePhononMaker):
     # bulk_relax_maker: BaseVaspMaker | None = field(
     #     default_factory=lambda: DoubleRelaxMaker.from_relax_maker(TightRelaxMaker())
     # )
-    # bulk_relax_maker: BaseVaspMaker | None = field(
-    #     default_factory=lambda: CoarseTightRelaxMaker.from_relax_maker(
+    bulk_relax_maker: BaseVaspMaker | None = field(
+        default_factory=lambda: CoarseTightRelaxMaker.from_relax_maker(
              
-    #             relax_maker1 = RelaxMaker(
-    #                 name="relax coarse",
-    #                 input_set_generator=InitialCoarseRelaxSetGenerator
-    #             ),
-    #             relax_maker2 = RelaxMaker(
-    #                 name="relax tight",
-    #                 input_set_generator=FinalTightRelaxSetGenerator
-    #             ))
-    #     )
+                relax_maker1 = RelaxMaker(
+                    name="relax coarse",
+                    input_set_generator=InitialCoarseRelaxSetGenerator
+                ),
+                relax_maker2 = RelaxMaker(
+                    name="relax tight",
+                    input_set_generator=FinalTightRelaxSetGenerator
+                ))
+        )
     static_energy_maker: BaseVaspMaker | None = field(
         default_factory=lambda: StaticMaker(
             input_set_generator=StaticSetGenerator(auto_ispin=True)
