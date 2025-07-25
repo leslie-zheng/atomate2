@@ -150,13 +150,9 @@ class CoarseTightRelaxMaker(Maker):
 
         # Update first (coarse) relax settings
         relax1.name = "relax coarse"
-        relax1.input_set_generator.user_incar_settings.update({"PREC": "High", "kspacing": 0.25})
-        # relax1.input_set_generator.user_kpoints_settings.update({"kspacing": 0.25})
 
         # Update second (tight) relax settings
         relax2.name = "relax tight"
-        relax2.input_set_generator.user_incar_settings.update({"PREC": "High", "kspacing": 0.15})
-        # relax2.input_set_generator.user_kpoints_settings.update({"kspacing": 0.15})
 
         return cls(relax_maker1=relax1, relax_maker2=relax2)
 
