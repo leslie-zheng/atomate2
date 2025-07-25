@@ -90,6 +90,76 @@ class DoubleRelaxMaker(Maker):
         return cls(
             relax_maker1=deepcopy(relax_maker), relax_maker2=deepcopy(relax_maker)
         )
+    
+
+
+from atomate2.vasp.sets.core import TightRelaxSetGenerator, InitialCoarseRelaxSetGenerator, FinalTightRelaxSetGenerator
+
+# --- New Class: CoarseTightRelaxMaker ---
+@dataclass
+class CoarseTightRelaxMaker(Maker):
+    """
+    Double relax maker with a coarse first relaxation followed by a tight second relaxation.
+
+    - First: kspacing = 0.25, PREC = High
+    - Second: kspacing = 0.15, PREC = High
+    """
+
+    name: str = "coarse then tight relax"
+    relax_maker1: BaseVaspMaker | None = field(default_factory=RelaxMaker(input_set_generator=InitialCoarseRelaxSetGenerator))
+    relax_maker2: BaseVaspMaker = field(default_factory=RelaxMaker(input_set_generator=FinalTightRelaxSetGenerator))
+
+    def make(self, structure: Structure, prev_dir: str | Path | None = None) -> Flow:
+        """Create a flow with two chained relaxations.
+
+        Parameters
+        ----------
+        structure : .Structure
+            A pymatgen structure object.
+        prev_dir : str or Path or None
+            A previous VASP calculation directory to copy output files from.
+
+        Returns
+        -------
+        Flow
+            A flow containing two relaxations.
+        """
+        jobs: list[Job] = []
+        if self.relax_maker1:
+            # Run a pre-relaxation
+            relax1 = self.relax_maker1.make(structure, prev_dir=prev_dir)
+            relax1.append_name(" 1")
+            jobs += [relax1]
+            structure = relax1.output.structure
+            prev_dir = relax1.output.dir_name
+
+        relax2 = self.relax_maker2.make(structure, prev_dir=prev_dir)
+        relax2.append_name(" 2")
+        jobs += [relax2]
+
+        return Flow(jobs, output=relax2.output, name=self.name)
+
+    @classmethod
+    def from_relax_maker(cls, relax_maker1: BaseVaspMaker, relax_maker2: BaseVaspMaker) -> Self:
+        """
+        Instantiate with two copies of a given relax maker.
+        Modifies only the PREC and kspacing of each step.
+        """
+        relax1 = deepcopy(relax_maker1)
+        relax2 = deepcopy(relax_maker2)
+
+        # Update first (coarse) relax settings
+        relax1.name = "relax coarse"
+        relax1.input_set_generator.user_incar_settings.update({"PREC": "High", "kspacing": 0.25})
+        # relax1.input_set_generator.user_kpoints_settings.update({"kspacing": 0.25})
+
+        # Update second (tight) relax settings
+        relax2.name = "relax tight"
+        relax2.input_set_generator.user_incar_settings.update({"PREC": "High", "kspacing": 0.15})
+        # relax2.input_set_generator.user_kpoints_settings.update({"kspacing": 0.15})
+
+        return cls(relax_maker1=relax1, relax_maker2=relax2)
+
 
 
 @dataclass

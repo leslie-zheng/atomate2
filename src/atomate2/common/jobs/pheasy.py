@@ -8,6 +8,7 @@ import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
+
 # import math
 from jobflow import Flow, Response, job
 from phonopy import Phonopy
@@ -241,7 +242,7 @@ def generate_phonon_displacements(
             phonon.generate_displacements(
                 distance=displacement,
                 number_of_snapshots=num_displaced_supercells,
-                random_seed=2000, #change it back to 103
+                random_seed=2000,  # change it back to 103
             )
         else:
             phonon.generate_displacements(

@@ -96,6 +96,62 @@ class TightRelaxSetGenerator(VaspInputGenerator):
             "NSW": 99,
             "LCHARG": False,
         }
+    
+
+@dataclass
+class InitialCoarseRelaxSetGenerator(VaspInputGenerator):
+    """Class to generate tight VASP relaxation input sets."""
+
+    @property
+    def incar_updates(self) -> dict:
+        """Get updates to the INCAR for a tight relaxation job.
+
+        Returns
+        -------
+        dict
+            A dictionary of updates to apply.
+        """
+        return {
+            "IBRION": 2,
+            "ISIF": 3,
+            "ENCUT": 700,
+            "EDIFF": 1e-7,
+            "LAECHG": False,
+            "EDIFFG": -0.001,
+            "LREAL": False,
+            "NSW": 99,
+            "LCHARG": False,
+            "KSPACING": 0.25,  # Coarse k-point density
+            "PREC": "High",  # Use high precision for initial coarse relax
+        }
+    
+
+@dataclass
+class FinalTightRelaxSetGenerator(VaspInputGenerator):
+    """Class to generate tight VASP relaxation input sets."""
+
+    @property
+    def incar_updates(self) -> dict:
+        """Get updates to the INCAR for a tight relaxation job.
+
+        Returns
+        -------
+        dict
+            A dictionary of updates to apply.
+        """
+        return {
+            "IBRION": 2,
+            "ISIF": 3,
+            "ENCUT": 700,
+            "EDIFF": 1e-7,
+            "LAECHG": False,
+            "EDIFFG": -0.001,
+            "LREAL": False,
+            "NSW": 99,
+            "LCHARG": False,
+            "KSPACING": 0.15,  # Coarse k-point density
+            "PREC": "High",  # Use high precision for initial coarse relax
+        }
 
 
 @dataclass
