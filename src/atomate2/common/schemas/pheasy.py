@@ -970,6 +970,7 @@ class PhononBSDOSDoc(StructureMetadata, extra="allow"):  # type: ignore[call-arg
                 "kpath_scheme": kpath_scheme,
                 "kpoint_density_dos": kpoint_density_dos,
             },
+            kwargs=kwargs,
         )
 
     @staticmethod
