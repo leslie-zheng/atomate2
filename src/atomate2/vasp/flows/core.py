@@ -145,7 +145,7 @@ class CoarseTightRelaxMaker(Maker):
         return Flow(jobs, output=relax3.output, name=self.name)
 
     @classmethod
-    def from_relax_maker(cls, relax_maker1: BaseVaspMaker, relax_maker2: BaseVaspMaker) -> Self:
+    def from_relax_maker(cls, relax_maker1: BaseVaspMaker, relax_maker2: BaseVaspMaker, relax_maker3: BaseVaspMaker) -> Self:
         """
         Instantiate with two copies of a given relax maker.
         Modifies only the PREC and kspacing of each step.
