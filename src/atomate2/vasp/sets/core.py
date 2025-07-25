@@ -122,7 +122,7 @@ class InitialCoarseRelaxSetGenerator(VaspInputGenerator):
             "NSW": 99,
             "LCHARG": False,
             "KSPACING": 0.25,  # Coarse k-point density
-            "PREC": "High",  # Use high precision for initial coarse relax
+            "PREC": "Accurate",  # "High"
         }
     
 
@@ -150,7 +150,7 @@ class FinalTightRelaxSetGenerator(VaspInputGenerator):
             "NSW": 99,
             "LCHARG": False,
             "KSPACING": 0.15,  # Coarse k-point density
-            "PREC": "High",  # Use high precision for initial coarse relax
+            "PREC": "Accurate",  # "High"
         }
 
 
