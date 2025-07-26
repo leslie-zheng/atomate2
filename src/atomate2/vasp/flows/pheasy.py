@@ -9,7 +9,7 @@ from atomate2 import SETTINGS
 from atomate2.common.flows.pheasy import BasePhononMaker
 from atomate2.vasp.flows.core import DoubleRelaxMaker, CoarseTightRelaxMaker
 from atomate2.vasp.jobs.core import DielectricMaker, StaticMaker, TightRelaxMaker, RelaxMaker
-from atomate2.vasp.sets.core import TightRelaxSetGenerator, InitialCoarseRelaxSetGenerator, FinalTightRelaxSetGenerator
+from atomate2.vasp.sets.core import TightRelaxSetGenerator, InitialCoarseRelaxSetGenerator, IntermediateTightRelaxSetGenerator, FinalTightRelaxSetGenerator
 from atomate2.vasp.jobs.phonons import PhononDisplacementMaker
 from atomate2.vasp.sets.core import StaticSetGenerator
 
@@ -136,14 +136,17 @@ class PhononMaker(BasePhononMaker):
     # )
     bulk_relax_maker: BaseVaspMaker | None = field(
         default_factory=lambda: CoarseTightRelaxMaker.from_relax_maker(
-             
                 relax_maker1 = RelaxMaker(
                     name="relax coarse",
-                    input_set_generator=InitialCoarseRelaxSetGenerator
+                    input_set_generator=InitialCoarseRelaxSetGenerator()
                 ),
                 relax_maker2 = RelaxMaker(
+                    name="relax intermediate",
+                    input_set_generator=IntermediateTightRelaxSetGenerator()
+                ),
+                relax_maker3 = RelaxMaker(
                     name="relax tight",
-                    input_set_generator=FinalTightRelaxSetGenerator
+                    input_set_generator=FinalTightRelaxSetGenerator()
                 ))
         )
     static_energy_maker: BaseVaspMaker | None = field(

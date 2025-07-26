@@ -158,7 +158,7 @@ class CoarseTightRelaxMaker(Maker):
         relax1.name = "relax coarse"
 
         # Update second (tight) relax settings
-        relax2.name = "relax tight"
+        relax2.name = "relax intermediate"
 
         # Update third (tight) relax settings
         relax3.name = "relax tight"
