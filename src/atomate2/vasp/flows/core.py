@@ -93,7 +93,7 @@ class DoubleRelaxMaker(Maker):
     
 
 
-from atomate2.vasp.sets.core import TightRelaxSetGenerator, InitialCoarseRelaxSetGenerator, FinalTightRelaxSetGenerator
+from atomate2.vasp.sets.core import TightRelaxSetGenerator, InitialCoarseRelaxSetGenerator, IntermediateTightRelaxSetGenerator, FinalTightRelaxSetGenerator
 
 # --- New Class: CoarseTightRelaxMaker ---
 @dataclass
@@ -107,7 +107,7 @@ class CoarseTightRelaxMaker(Maker):
 
     name: str = "coarse then tight relax"
     relax_maker1: BaseVaspMaker | None = field(default_factory=RelaxMaker(input_set_generator=InitialCoarseRelaxSetGenerator))
-    relax_maker2: BaseVaspMaker = field(default_factory=RelaxMaker(input_set_generator=FinalTightRelaxSetGenerator))
+    relax_maker2: BaseVaspMaker = field(default_factory=RelaxMaker(input_set_generator=IntermediateTightRelaxSetGenerator))
     relax_maker3: BaseVaspMaker = field(default_factory=RelaxMaker(input_set_generator=FinalTightRelaxSetGenerator))
 
     def make(self, structure: Structure, prev_dir: str | Path | None = None) -> Flow:
@@ -137,6 +137,8 @@ class CoarseTightRelaxMaker(Maker):
         relax2 = self.relax_maker2.make(structure, prev_dir=prev_dir)
         relax2.append_name(" 2")
         jobs += [relax2]
+        structure = relax2.output.structure
+        prev_dir = relax2.output.dir_name
 
         relax3 = self.relax_maker3.make(structure, prev_dir=prev_dir)
         relax3.append_name(" 3")
