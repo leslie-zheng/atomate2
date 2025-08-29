@@ -108,7 +108,7 @@ class CoarseTightRelaxMaker(Maker):
     name: str = "coarse then tight relax"
     relax_maker1: BaseVaspMaker | None = field(default_factory=RelaxMaker(input_set_generator=InitialCoarseRelaxSetGenerator))
     relax_maker2: BaseVaspMaker = field(default_factory=RelaxMaker(input_set_generator=IntermediateTightRelaxSetGenerator))
-    relax_maker3: BaseVaspMaker = field(default_factory=RelaxMaker(input_set_generator=FinalTightRelaxSetGenerator))
+    # relax_maker3: BaseVaspMaker = field(default_factory=RelaxMaker(input_set_generator=FinalTightRelaxSetGenerator))
 
     def make(self, structure: Structure, prev_dir: str | Path | None = None) -> Flow:
         """Create a flow with two chained relaxations.
@@ -140,32 +140,35 @@ class CoarseTightRelaxMaker(Maker):
         structure = relax2.output.structure
         prev_dir = relax2.output.dir_name
 
-        relax3 = self.relax_maker3.make(structure, prev_dir=prev_dir)
-        relax3.append_name(" 3")
-        jobs += [relax3]
+        # relax3 = self.relax_maker3.make(structure, prev_dir=prev_dir)
+        # relax3.append_name(" 3")
+        # jobs += [relax3]
 
-        return Flow(jobs, output=relax3.output, name=self.name)
+        # return Flow(jobs, output=relax3.output, name=self.name)
+        return Flow(jobs, output=relax2.output, name=self.name)
 
     @classmethod
-    def from_relax_maker(cls, relax_maker1: BaseVaspMaker, relax_maker2: BaseVaspMaker, relax_maker3: BaseVaspMaker) -> Self:
+    # def from_relax_maker(cls, relax_maker1: BaseVaspMaker, relax_maker2: BaseVaspMaker, relax_maker3: BaseVaspMaker) -> Self:
+    def from_relax_maker(cls, relax_maker1: BaseVaspMaker, relax_maker2: BaseVaspMaker) -> Self:
         """
         Instantiate with two copies of a given relax maker.
         Modifies only the PREC and kspacing of each step.
         """
         relax1 = deepcopy(relax_maker1)
         relax2 = deepcopy(relax_maker2)
-        relax3 = deepcopy(relax_maker3)
+        # relax3 = deepcopy(relax_maker3)
 
-        # Update first (coarse) relax settings
-        relax1.name = "relax coarse"
+        # # Update first (coarse) relax settings
+        # relax1.name = "relax coarse"
 
-        # Update second (tight) relax settings
-        relax2.name = "relax intermediate"
+        # # Update second (tight) relax settings
+        # relax2.name = "relax intermediate"
 
-        # Update third (tight) relax settings
-        relax3.name = "relax tight"
+        # # Update third (tight) relax settings
+        # relax3.name = "relax tight"
 
-        return cls(relax_maker1=relax1, relax_maker2=relax2, relax_maker3=relax3)
+        # return cls(relax_maker1=relax1, relax_maker2=relax2, relax_maker3=relax3)
+        return cls(relax_maker1=relax1, relax_maker2=relax2)
 
 
 
