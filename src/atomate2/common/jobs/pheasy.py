@@ -61,17 +61,17 @@ def get_supercell_size(
     force_diagonal: bool
         if True, the algorithm will try to scale the cell diagonally.
     """
-    abc = structure.lattice.abc
-    oversized = [L > 8.0 for L in abc]
+    # abc = structure.lattice.abc
+    # oversized = [L > 8.0 for L in abc]
 
-    # if any axis is oversized, keep it at 1x and scale others to min_length
-    if any(oversized):
-        mults = [
-            1 if is_big else math.ceil(12.0 / L)
-            for L, is_big in zip(abc, oversized)
-        ]
-        mat = np.diag(mults)
-        return mat.transpose().tolist()
+    # # if any axis is oversized, keep it at 1x and scale others to min_length
+    # if any(oversized):
+    #     mults = [
+    #         1 if is_big else math.ceil(12.0 / L)
+    #         for L, is_big in zip(abc, oversized)
+    #     ]
+    #     mat = np.diag(mults)
+    #     return mat.transpose().tolist()
 
     # if no axis is oversized, use CubicSupercellTransformation
     transformation = CubicSupercellTransformation(
