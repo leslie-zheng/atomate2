@@ -2,18 +2,14 @@ import pytest
 from emmet.core.tasks import TaskDoc
 from jobflow import run_locally
 from pymatgen.core import Structure
+from pymatgen.io.vasp.sets import MatPESStaticSet
 
 from atomate2.vasp.jobs.base import BaseVaspMaker
 from atomate2.vasp.jobs.matpes import MatPesGGAStaticMaker, MatPesMetaGGAStaticMaker
-from atomate2.vasp.sets.matpes import (
-    MatPesGGAStaticSetGenerator,
-    MatPesMetaGGAStaticSetGenerator,
-)
 
 expected_incar = {
     "ALGO": "Normal",
     "EDIFF": 1e-05,
-    "ENAUG": 1360,
     "ENCUT": 680,
     "GGA": "PE",
     "ISMEAR": 0,
@@ -26,6 +22,7 @@ expected_incar = {
     "LORBIT": 11,
     "LREAL": False,
     "LWAVE": False,
+    "MAGMOM": [0.6, 0.6],
     "NELM": 200,
     "NSW": 0,
     "PREC": "Accurate",
@@ -65,19 +62,30 @@ expected_incar = {
     },
 }
 
+# Newer versions of pymatgen-core have removed ENAUG  per VASP recommendation
+# TODO: Remove after a few releases of pymatgen-core after 2026.8.13
+if "ENAUG" in MatPESStaticSet.CONFIG["INCAR"]:
+    expected_incar["ENAUG"] = 1360.0
+
 
 @pytest.mark.parametrize("maker_cls", [MatPesGGAStaticMaker, MatPesMetaGGAStaticMaker])
 def test_matpes_static_maker_default_values(maker_cls: BaseVaspMaker):
     maker = maker_cls()
     is_meta = "Meta" in maker_cls.__name__
     assert maker.name == f"MatPES {'meta-' if is_meta else ''}GGA static"
-    assert isinstance(
-        maker.input_set_generator,
-        MatPesMetaGGAStaticSetGenerator if is_meta else MatPesGGAStaticSetGenerator,
-    )
+    assert isinstance(maker.input_set_generator, MatPESStaticSet)
+    if is_meta:
+        assert (
+            maker.input_set_generator._config_dict[  # noqa: SLF001
+                "INCAR"
+            ].get("METAGGA")
+            == "R2SCAN"
+        )
     config = maker.input_set_generator.config_dict
     assert {*config} == {"INCAR", "POTCAR", "PARENT", "POTCAR_FUNCTIONAL"}
-    assert config["INCAR"] == expected_incar
+    assert all(
+        v == expected_incar[k] for k, v in config["INCAR"].items() if k != "MAGMOM"
+    )
 
 
 def test_matpes_gga_static_maker(mock_vasp, clean_dir, vasp_test_dir):
@@ -85,7 +93,7 @@ def test_matpes_gga_static_maker(mock_vasp, clean_dir, vasp_test_dir):
     gga_job_name = "MatPES GGA static"
     ref_paths = {gga_job_name: "matpes_static_flow/pbe_static"}
     si_struct = Structure.from_file(
-        f"{vasp_test_dir}/matpes_static_flow/pbe_static/inputs/POSCAR"
+        f"{vasp_test_dir}/matpes_static_flow/pbe_static/inputs/POSCAR.gz"
     )
 
     # exclude LWAVE from INCAR checking since it defaults to False in MatPesGGAStatic
@@ -108,7 +116,7 @@ def test_matpes_meta_gga_static_maker(mock_vasp, clean_dir, vasp_test_dir):
     # map from job name to directory containing reference input/output files
     ref_paths = {"MatPES meta-GGA static": "matpes_static_flow/r2scan_static"}
     si_struct = Structure.from_file(
-        f"{vasp_test_dir}/matpes_static_flow/r2scan_static/inputs/POSCAR"
+        f"{vasp_test_dir}/matpes_static_flow/r2scan_static/inputs/POSCAR.gz"
     )
 
     mock_vasp(ref_paths)

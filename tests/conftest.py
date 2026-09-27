@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-from fireworks import LaunchPad
 from jobflow import JobStore
 from jobflow.settings import JobflowSettings
 from maggma.stores import MemoryStore
@@ -44,13 +43,13 @@ def clean_dir(debug_mode):
     os.chdir(new_path)
     yield
     if debug_mode:
-        print(f"Tests ran in {new_path}")  # noqa: T201
+        initialize_logger().log(f"Tests ran in {new_path}")
     else:
         os.chdir(old_cwd)
         shutil.rmtree(new_path)
 
 
-@pytest.fixture()
+@pytest.fixture(autouse=True)
 def tmp_dir():
     """Same as clean_dir but is fresh for every test"""
 
@@ -69,6 +68,12 @@ def debug_mode():
 
 @pytest.fixture(scope="session")
 def lpad(database, debug_mode):
+    try:
+        from fireworks import LaunchPad
+    except ImportError as exc:
+        raise ImportError(
+            "Please pip install fireworks to use this test fixture."
+        ) from exc
     lpad = LaunchPad(name=database)
     lpad.reset("", require_password=False)
     yield lpad
@@ -79,7 +84,7 @@ def lpad(database, debug_mode):
             lpad.db[coll].drop()
 
 
-@pytest.fixture()
+@pytest.fixture
 def memory_jobstore():
     store = JobStore(MemoryStore(), additional_stores={"data": MemoryStore()})
     store.connect()
@@ -92,17 +97,27 @@ def log_to_stdout_auto_use():
     initialize_logger()
 
 
-@pytest.fixture()
+@pytest.fixture
 def si_structure(test_dir):
     return Structure.from_file(test_dir / "structures" / "Si.cif")
 
 
-@pytest.fixture()
+@pytest.fixture
+def si_diamond(test_dir):
+    return Structure.from_file(test_dir / "structures" / "Si_diamond.cif")
+
+
+@pytest.fixture
+def al2_au_structure(test_dir):
+    return Structure.from_file(test_dir / "structures" / "Al2Au.cif")
+
+
+@pytest.fixture
 def sr_ti_o3_structure(test_dir):
     return Structure.from_file(test_dir / "structures" / "SrTiO3.cif")
 
 
-@pytest.fixture()
+@pytest.fixture
 def ba_ti_o3_structure(test_dir):
     return Structure.from_file(test_dir / "structures" / "BaTiO3.cif")
 

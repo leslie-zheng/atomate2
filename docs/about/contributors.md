@@ -129,3 +129,18 @@ Hobbyist Contributor
 
 [comprhys]: https://github.com/comprhys
 [0000-0002-6589-1700]: https://orcid.org/0000-0002-6589-1700
+
+
+**Kevin Beck** [![gh]][4kevinbeck5] [![orc]][0009-0006-5620-1292] \
+PhD student in Applied Mathematics \
+University of Arizona
+
+[4kevinbeck5]: https://github.com/4kevinbeck5
+[0009-0006-5620-1292]: https://orcid.org/0009-0006-5620-1292
+
+**Gael Huynh** [![gh]][akwarii] [![orc]][0009-0003-1496-7685] \
+Postdoctoral Researcher \
+University of Louvain
+
+[akwarii]: https://github.com/akwarii
+[0009-0003-1496-7685]: https://orcid.org/0009-0003-1496-7685

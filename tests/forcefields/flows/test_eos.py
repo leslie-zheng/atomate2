@@ -1,27 +1,57 @@
+from itertools import product
+
 import pytest
-import torch
 from jobflow import run_locally
 from monty.serialization import loadfn
 
-from atomate2.forcefields.flows.eos import CHGNetEosMaker, M3GNetEosMaker, MACEEosMaker
+from atomate2.forcefields.flows.eos import ForceFieldEosMaker
+from atomate2.forcefields.jobs import ForceFieldRelaxMaker
+from atomate2.utils.testing import get_job_uuid_name_map
 
-_mlff_to_maker = {
-    "CHGNet": CHGNetEosMaker,
-    "M3GNet": M3GNetEosMaker,
-    "MACE": MACEEosMaker,
-}
+from ..conftest import mlff_is_installed  # noqa: TID252
 
 
-@pytest.mark.parametrize("mlff", list(_mlff_to_maker))
-def test_ml_ff_eos_makers(mlff: str, si_structure, clean_dir, test_dir):
-    # MACE changes the default dtype, ensure consistent dtype here
-    torch.set_default_dtype(torch.float32)
+@pytest.mark.parametrize(
+    "mlff,batch_mode",
+    product(
+        [mlff for mlff in ["CHGNet", "MACE"] if mlff_is_installed(mlff)], [True, False]
+    ),
+)
+def test_ml_ff_eos_makers(
+    mlff: str, batch_mode: bool, si_structure, clean_dir, test_dir
+):
 
-    job = _mlff_to_maker[mlff]().make(si_structure)
-    job_to_uuid = {job.name: job.uuid for job in job.jobs}
-    postprocess_uuid = job_to_uuid[f"{mlff} EOS Maker postprocessing"]
+    calculator_kwargs = {}
+    if mlff == "CHGNet":
+        calculator_kwargs = {"path": "CHGNet-PES-MatPES-PBE-2025.2.10"}
+    elif mlff == "MACE":
+        calculator_kwargs = {"model": "medium-0b3", "default_dtype": "float32"}
+
+    maker = ForceFieldEosMaker.from_force_field_name(
+        mlff,
+        calculator_kwargs=calculator_kwargs,
+        socket=batch_mode,
+    )
+
+    # Note that some calculator_kwargs, like stress_unit, are set by `ase_calculator`
+    # for consistency - test only the subset of user-specified kwargs here
+    assert all(
+        v == maker.initial_relax_maker.calculator_kwargs[k]
+        for k, v in calculator_kwargs.items()
+    )
+    assert all(
+        v == maker.eos_relax_maker.calculator_kwargs[k]
+        for k, v in calculator_kwargs.items()
+    )
+
+    job = maker.make(si_structure)
+    for attr in ("initial_relax_maker", "eos_relax_maker"):
+        assert mlff in getattr(maker, attr).force_field_name
+
+    job_to_uuid = {v: k for k, v in get_job_uuid_name_map(job).items()}
+    post_process_uuid = job_to_uuid[f"{mlff} EOS Maker postprocessing"]
     response = run_locally(job, ensure_success=True)
-    output = response[postprocess_uuid][1].output
+    output = response[post_process_uuid][1].output
 
     ref_data = loadfn(f"{test_dir}/forcefields/eos/{mlff}_Si_eos.json.gz")
 
@@ -30,6 +60,29 @@ def test_ml_ff_eos_makers(mlff: str, si_structure, clean_dir, test_dir):
             assert output["relax"][key] == pytest.approx(ref_data["relax"][key])
         elif isinstance(key, list):
             assert all(
-                output["relax"][key][i] == pytest.approx(value)
-                for i, value in ref_data["relax"][key].items()
+                output["relax"][key][idx] == pytest.approx(value)
+                for idx, value in ref_data["relax"][key].items()
             )
+
+    assert (
+        ForceFieldEosMaker.from_force_field_name(
+            mlff, relax_initial_structure=False
+        ).initial_relax_maker
+        is None
+    )
+
+
+def test_ext_load_eos_initialization():
+    pytest.importorskip("mace")
+    calculator_meta = {
+        "@module": "mace.calculators",
+        "@callable": "mace_mp",
+    }
+    maker = ForceFieldEosMaker.from_force_field_name(
+        force_field_name=calculator_meta,
+        relax_initial_structure=True,
+    )
+    assert isinstance(maker.initial_relax_maker, ForceFieldRelaxMaker)
+    assert isinstance(maker.eos_relax_maker, ForceFieldRelaxMaker)
+    assert maker.initial_relax_maker.ase_calculator_name == "mace_mp"
+    assert maker.eos_relax_maker.ase_calculator_name == "mace_mp"

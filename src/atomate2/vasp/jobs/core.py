@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
@@ -17,13 +18,16 @@ from atomate2.vasp.sets.core import (
     HSEStaticSetGenerator,
     HSETightRelaxSetGenerator,
     NonSCFSetGenerator,
+    RelaxConstVolSetGenerator,
     RelaxSetGenerator,
     StaticSetGenerator,
+    TightRelaxConstVolSetGenerator,
     TightRelaxSetGenerator,
 )
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Any
 
     from jobflow import Response
     from pymatgen.core.structure import Structure
@@ -100,6 +104,40 @@ class RelaxMaker(BaseVaspMaker):
     input_set_generator: VaspInputGenerator = field(default_factory=RelaxSetGenerator)
 
 
+class RelaxConstVolMaker(BaseVaspMaker):
+    """
+    Maker to create VASP constant volume relaxation jobs.
+
+    Parameters
+    ----------
+    name : str
+        The job name.
+    input_set_generator : .VaspInputGenerator
+        A generator used to make the input set.
+    write_input_set_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.write_vasp_input_set`.
+    copy_vasp_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.copy_vasp_outputs`.
+    run_vasp_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.run_vasp`.
+    task_document_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.TaskDoc.from_directory`.
+    stop_children_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.should_stop_children`.
+    write_additional_data : dict
+        Additional data to write to the current directory. Given as a dict of
+        {filename: data}. Note that if using FireWorks, dictionary keys cannot contain
+        the "." character which is typically used to denote file extensions. To avoid
+        this, use the ":" character, which will automatically be converted to ".". E.g.
+        ``{"my_file:txt": "contents of the file"}``.
+    """
+
+    name: str = "relax"
+    input_set_generator: VaspInputGenerator = field(
+        default_factory=RelaxConstVolSetGenerator
+    )
+
+
 @dataclass
 class TightRelaxMaker(BaseVaspMaker):
     """
@@ -132,6 +170,41 @@ class TightRelaxMaker(BaseVaspMaker):
     name: str = "tight relax"
     input_set_generator: VaspInputGenerator = field(
         default_factory=TightRelaxSetGenerator
+    )
+
+
+@dataclass
+class TightRelaxConstVolMaker(BaseVaspMaker):
+    """
+    Maker to create tight constant volume VASP relaxation jobs.
+
+    Parameters
+    ----------
+    name : str
+        The job name.
+    input_set_generator : .VaspInputGenerator
+        A generator used to make the input set.
+    write_input_set_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.write_vasp_input_set`.
+    copy_vasp_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.copy_vasp_outputs`.
+    run_vasp_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.run_vasp`.
+    task_document_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.TaskDoc.from_directory`.
+    stop_children_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.should_stop_children`.
+    write_additional_data : dict
+        Additional data to write to the current directory. Given as a dict of
+        {filename: data}. Note that if using FireWorks, dictionary keys cannot contain
+        the "." character which is typically used to denote file extensions. To avoid
+        this, use the ":" character, which will automatically be converted to ".". E.g.
+        ``{"my_file:txt": "contents of the file"}``.
+    """
+
+    name: str = "tight relax"
+    input_set_generator: VaspInputGenerator = field(
+        default_factory=TightRelaxConstVolSetGenerator
     )
 
 
@@ -428,6 +501,45 @@ class DielectricMaker(BaseVaspMaker):
 
 
 @dataclass
+class PolarizationMaker(BaseVaspMaker):
+    """
+    Maker to create polarization calculation VASP jobs.
+
+    .. Note::
+        If starting from a previous calculation, magnetism will be disabled if all
+        MAGMOMs are less than 0.02.
+
+    Parameters
+    ----------
+    name : str
+        The job name.
+    input_set_generator : .StaticSetGenerator
+        A generator used to make the input set.
+    write_input_set_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.write_vasp_input_set`.
+    copy_vasp_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.copy_vasp_outputs`.
+    run_vasp_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.run_vasp`.
+    task_document_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.TaskDoc.from_directory`.
+    stop_children_kwargs : dict
+        Keyword arguments that will get passed to :obj:`.should_stop_children`.
+    write_additional_data : dict
+        Additional data to write to the current directory. Given as a dict of
+        {filename: data}. Note that if using FireWorks, dictionary keys cannot contain
+        the "." character which is typically used to denote file extensions. To avoid
+        this, use the ":" character, which will automatically be converted to ".". E.g.
+        ``{"my_file:txt": "contents of the file"}``.
+    """
+
+    name: str = "polarization"
+    input_set_generator: StaticSetGenerator = field(
+        default_factory=lambda: StaticSetGenerator(lcalcpol=True, auto_ispin=True)
+    )
+
+
+@dataclass
 class TransmuterMaker(BaseVaspMaker):
     """
     A maker to apply transformations to a structure before writing the input sets.
@@ -498,3 +610,19 @@ class TransmuterMaker(BaseVaspMaker):
         self.write_additional_data.setdefault("transformations:json", tjson)
 
         return super().make.original(self, structure, prev_dir)
+
+
+def __getattr__(name: str) -> Any:
+    if name == "TightConstVolRelaxMaker":
+        warnings.warn(
+            (
+                "`TightConstVolRelaxMaker` is a duplicate of "
+                " `TightRelaxConstVolMaker`, and will be removed on "
+                "1 October, 2026. Please migrate to `TightRelaxConstVolMaker`."
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return TightRelaxConstVolMaker
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

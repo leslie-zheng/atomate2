@@ -5,13 +5,15 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 import numpy as np
 from emmet.core.structure import StructureMetadata
 from monty.dev import requires
 from monty.json import MontyDecoder, jsanitize
-from monty.os.path import zpath
+
+# TODO: remove this kludge when monty is fixed
+from monty.os.path import zpath as monty_zpath
 from pydantic import BaseModel, Field
 from pymatgen.core import Structure
 from pymatgen.electronic_structure.cohp import Cohp, CompleteCohp
@@ -45,18 +47,23 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def zpath(pathname: Union[str, Path]) -> str:
+    """Kludge to fix monty zpath bug."""
+    return monty_zpath(str(pathname))
+
+
 class LobsteroutModel(BaseModel):
     """Definition of computational settings from the LOBSTER computation."""
 
-    restart_from_projection: Optional[bool] = Field(
+    restart_from_projection: bool | None = Field(
         None,
         description="Bool indicating if the run has been restarted from a projection",
     )
-    lobster_version: Optional[str] = Field(None, description="Lobster version")
-    threads: Optional[int] = Field(
+    lobster_version: str | None = Field(None, description="Lobster version")
+    threads: int | None = Field(
         None, description="Number of threads that Lobster ran on"
     )
-    dft_program: Optional[str] = Field(
+    dft_program: str | None = Field(
         None, description="DFT program was used for this run"
     )
     charge_spilling: list[float] = Field(description="Absolute charge spilling")
@@ -65,48 +72,48 @@ class LobsteroutModel(BaseModel):
     basis_type: list[str] = Field(description="Basis set used in Lobster")
     basis_functions: list[list[str]] = Field(description="basis_functions")
     timing: dict[str, dict[str, str]] = Field(description="Dict with infos on timing")
-    warning_lines: Optional[list] = Field(None, description="Warnings")
-    info_orthonormalization: Optional[list] = Field(
+    warning_lines: list | None = Field(None, description="Warnings")
+    info_orthonormalization: list | None = Field(
         None, description="additional information on orthonormalization"
     )
-    info_lines: Optional[list] = Field(
+    info_lines: list | None = Field(
         None, description="list of strings with additional info lines"
     )
-    has_doscar: Optional[bool] = Field(
+    has_doscar: bool | None = Field(
         None, description="Bool indicating if DOSCAR is present."
     )
-    has_doscar_lso: Optional[bool] = Field(
+    has_doscar_lso: bool | None = Field(
         None, description="Bool indicating if DOSCAR.LSO is present."
     )
-    has_cohpcar: Optional[bool] = Field(
+    has_cohpcar: bool | None = Field(
         None, description="Bool indicating if COHPCAR is present."
     )
-    has_coopcar: Optional[bool] = Field(
+    has_coopcar: bool | None = Field(
         None, description="Bool indicating if COOPCAR is present."
     )
-    has_cobicar: Optional[bool] = Field(
+    has_cobicar: bool | None = Field(
         None, description="Bool indicating if COBICAR is present."
     )
-    has_charge: Optional[bool] = Field(
+    has_charge: bool | None = Field(
         None, description="Bool indicating if CHARGE is present."
     )
-    has_madelung: Optional[bool] = Field(
+    has_madelung: bool | None = Field(
         None,
         description="Bool indicating if Site Potentials and Madelung file is present.",
     )
-    has_projection: Optional[bool] = Field(
+    has_projection: bool | None = Field(
         None, description="Bool indicating if projection file is present."
     )
-    has_bandoverlaps: Optional[bool] = Field(
+    has_bandoverlaps: bool | None = Field(
         None, description="Bool indicating if BANDOVERLAPS file is present"
     )
-    has_fatbands: Optional[bool] = Field(
+    has_fatbands: bool | None = Field(
         None, description="Bool indicating if Fatbands are present."
     )
-    has_grosspopulation: Optional[bool] = Field(
+    has_grosspopulation: bool | None = Field(
         None, description="Bool indicating if GROSSPOP file is present."
     )
-    has_density_of_energies: Optional[bool] = Field(
+    has_density_of_energies: bool | None = Field(
         None, description="Bool indicating if DensityofEnergies is present"
     )
 
@@ -117,24 +124,24 @@ class LobsterinModel(BaseModel):
     cohpstartenergy: float = Field(description="Start energy for COHP computation")
     cohpendenergy: float = Field(description="End energy for COHP computation")
 
-    gaussiansmearingwidth: Optional[float] = Field(
+    gaussiansmearingwidth: float | None = Field(
         None, description="Set the smearing width in eV,default is 0.2 (eV)"
     )
-    usedecimalplaces: Optional[int] = Field(
+    usedecimalplaces: int | None = Field(
         None,
         description="Set the decimal places to print in output files, default is 5",
     )
-    cohpsteps: Optional[float] = Field(
+    cohpsteps: float | None = Field(
         None, description="Number steps in COHPCAR; similar to NEDOS of VASP"
     )
     basisset: str = Field(description="basis set of computation")
     cohpgenerator: str = Field(
         description="Build the list of atom pairs to be analyzed using given distance"
     )
-    saveprojectiontofile: Optional[bool] = Field(
+    saveprojectiontofile: bool | None = Field(
         None, description="Save the results of projections"
     )
-    lsodos: Optional[bool] = Field(
+    lsodos: bool | None = Field(
         None, description="Writes DOS output from the orthonormalized LCAO basis"
     )
     basisfunctions: list[str] = Field(
@@ -145,22 +152,20 @@ class LobsterinModel(BaseModel):
 class Bonding(BaseModel):
     """Model describing bonding field of BondsInfo."""
 
-    integral: Optional[float] = Field(
+    integral: float | None = Field(
         None, description="Integral considering only bonding contributions from COHPs"
     )
-    perc: Optional[float] = Field(
-        None, description="Percentage of bonding contribution"
-    )
+    perc: float | None = Field(None, description="Percentage of bonding contribution")
 
 
 class Antibonding(BaseModel):
     """Model describing antibonding field of BondsInfo."""
 
-    integral: Optional[float] = Field(
+    integral: float | None = Field(
         None,
         description="Integral considering only anti-bonding contributions from COHPs",
     )
-    perc: Optional[float] = Field(
+    perc: float | None = Field(
         None, description="Percentage of anti-bonding contribution"
     )
 
@@ -270,7 +275,7 @@ class CondensedBondingAnalysis(BaseModel):
         description="Bool that states if the spin channels in the "
         "cohp_plot_data are summed.",
     )
-    start: Optional[float] = Field(
+    start: float | None = Field(
         None,
         description="Sets the lower limit of energy relative to Fermi for evaluating"
         " bonding/anti-bonding percentages in the bond"
@@ -323,12 +328,12 @@ class CondensedBondingAnalysis(BaseModel):
         plot_kwargs = plot_kwargs or {}
         lobsterpy_kwargs = lobsterpy_kwargs or {}
         dir_name = Path(dir_name)
-        cohpcar_path = Path(zpath(dir_name / "COHPCAR.lobster"))
-        charge_path = Path(zpath(dir_name / "CHARGE.lobster"))
-        structure_path = Path(zpath(dir_name / "POSCAR"))
-        icohplist_path = Path(zpath(dir_name / "ICOHPLIST.lobster"))
-        icobilist_path = Path(zpath(dir_name / "ICOBILIST.lobster"))
-        icooplist_path = Path(zpath(dir_name / "ICOOPLIST.lobster"))
+        cohpcar_path = Path(zpath(str((dir_name / "COHPCAR.lobster").as_posix())))
+        charge_path = Path(zpath(str((dir_name / "CHARGE.lobster").as_posix())))
+        structure_path = Path(zpath(str((dir_name / "CONTCAR").as_posix())))
+        icohplist_path = Path(zpath(str((dir_name / "ICOHPLIST.lobster").as_posix())))
+        icobilist_path = Path(zpath(str((dir_name / "ICOBILIST.lobster").as_posix())))
+        icooplist_path = Path(zpath(str((dir_name / "ICOOPLIST.lobster").as_posix())))
 
         # Update lobsterpy analysis parameters with user supplied parameters
         lobsterpy_kwargs_updated = {
@@ -340,7 +345,7 @@ class CondensedBondingAnalysis(BaseModel):
             "orbital_resolved": False,
             "start": None,
             "summed_spins": False,  # we will always use spin polarization here
-            "type_charge": None,
+            "type_charge": "Mulliken",
             **lobsterpy_kwargs,
         }
 
@@ -366,10 +371,10 @@ class CondensedBondingAnalysis(BaseModel):
             struct = analyse.structure
 
             for _iplot, (ication, labels, cohps) in enumerate(
-                zip(seq_ineq_cations, seq_labels_cohps, seq_cohps)
+                zip(seq_ineq_cations, seq_labels_cohps, seq_cohps, strict=True)
             ):
                 label_str = f"{struct[ication].specie!s}{ication + 1!s}: "
-                for label, cohp in zip(labels, cohps):
+                for label, cohp in zip(labels, cohps, strict=True):
                     if label is not None:
                         cba_cohp_plot_data[label_str + label] = cohp
 
@@ -405,8 +410,7 @@ class CondensedBondingAnalysis(BaseModel):
                 with open(f"{filename}.json", "w") as fp:
                     json.dump(analyse.condensed_bonding_analysis, fp)
                 with open(f"{filename}.txt", "w") as fp:
-                    for line in describe.text:
-                        fp.write(f"{line}\n")
+                    fp.writelines(f"{line}\n" for line in describe.text)
 
             # Read in strongest icohp values
             sb = _identify_strongest_bonds(
@@ -425,27 +429,27 @@ class CondensedBondingAnalysis(BaseModel):
 class DosComparisons(BaseModel):
     """Model describing the DOS comparisons field in the CalcQualitySummary model."""
 
-    tanimoto_orb_s: Optional[float] = Field(
+    tanimoto_orb_s: float | None = Field(
         None,
         description="Tanimoto similarity index between s orbital of "
         "VASP and LOBSTER DOS",
     )
-    tanimoto_orb_p: Optional[float] = Field(
+    tanimoto_orb_p: float | None = Field(
         None,
         description="Tanimoto similarity index between p orbital of "
         "VASP and LOBSTER DOS",
     )
-    tanimoto_orb_d: Optional[float] = Field(
+    tanimoto_orb_d: float | None = Field(
         None,
         description="Tanimoto similarity index between d orbital of "
         "VASP and LOBSTER DOS",
     )
-    tanimoto_orb_f: Optional[float] = Field(
+    tanimoto_orb_f: float | None = Field(
         None,
         description="Tanimoto similarity index between f orbital of "
         "VASP and LOBSTER DOS",
     )
-    tanimoto_summed: Optional[float] = Field(
+    tanimoto_summed: float | None = Field(
         None,
         description="Tanimoto similarity index for summed PDOS between "
         "VASP and LOBSTER",
@@ -453,7 +457,7 @@ class DosComparisons(BaseModel):
     e_range: list[Union[float, None]] = Field(
         description="Energy range used for evaluating the Tanimoto similarity index"
     )
-    n_bins: Optional[int] = Field(
+    n_bins: int | None = Field(
         None,
         description="Number of bins used for discretizing the VASP and LOBSTER PDOS"
         "(Affects the Tanimoto similarity index)",
@@ -463,13 +467,13 @@ class DosComparisons(BaseModel):
 class ChargeComparisons(BaseModel):
     """Model describing the charges field in the CalcQualitySummary model."""
 
-    bva_mulliken_agree: Optional[bool] = Field(
+    bva_mulliken_agree: bool | None = Field(
         None,
         description="Bool indicating whether atoms classification as cation "
         "or anion based on Mulliken charge signs of LOBSTER "
         "agree with BVA analysis",
     )
-    bva_loewdin_agree: Optional[bool] = Field(
+    bva_loewdin_agree: bool | None = Field(
         None,
         description="Bool indicating whether atoms classification as cations "
         "or anions based on Loewdin charge signs of LOBSTER "
@@ -484,22 +488,22 @@ class BandOverlapsComparisons(BaseModel):
         description="Boolean indicating whether the bandOverlaps.lobster "
         "file is generated during the LOBSTER run",
     )
-    limit_maxDeviation: Optional[float] = Field(  # noqa: N815
+    limit_maxDeviation: float | None = Field(  # noqa: N815
         None,
         description="Limit set for maximal deviation in pymatgen parser",
     )
-    has_good_quality_maxDeviation: Optional[bool] = Field(  # noqa: N815
+    has_good_quality_maxDeviation: bool | None = Field(  # noqa: N815
         None,
         description="Boolean indicating whether the deviation at each k-point "
         "is within the threshold set using limit_maxDeviation "
         "for analyzing the bandOverlaps.lobster file data",
     )
-    max_deviation: Optional[float] = Field(
+    max_deviation: float | None = Field(
         None,
         description="Maximum deviation from ideal identity matrix from the observed in "
         "the bandOverlaps.lobster file",
     )
-    percent_kpoints_abv_limit: Optional[float] = Field(
+    percent_kpoints_abv_limit: float | None = Field(
         None,
         description="Percent of k-points that show deviations above "
         "the limit_maxDeviation threshold set in pymatgen parser.",
@@ -527,15 +531,15 @@ class CalcQualitySummary(BaseModel):
     charge_spilling: ChargeSpilling = Field(
         description="Model describing the charge spilling from the LOBSTER runs",
     )
-    charge_comparisons: Optional[ChargeComparisons] = Field(
+    charge_comparisons: ChargeComparisons | None = Field(
         None,
         description="Model describing the charge sign comparison results",
     )
-    band_overlaps_analysis: Optional[BandOverlapsComparisons] = Field(
+    band_overlaps_analysis: BandOverlapsComparisons | None = Field(
         None,
         description="Model describing the band overlap file analysis results",
     )
-    dos_comparisons: Optional[DosComparisons] = Field(
+    dos_comparisons: DosComparisons | None = Field(
         None,
         description="Model describing the VASP and LOBSTER PDOS comparisons results",
     )
@@ -563,24 +567,24 @@ class CalcQualitySummary(BaseModel):
         """
         dir_name = Path(dir_name)
         calc_quality_kwargs = calc_quality_kwargs or {}
-        band_overlaps_path = Path(zpath(dir_name / "bandOverlaps.lobster"))
-        charge_path = Path(zpath(dir_name / "CHARGE.lobster"))
-        doscar_path = Path(
-            zpath(
-                dir_name / "DOSCAR.LSO.lobster"
-                if Path(zpath(dir_name / "DOSCAR.LSO.lobster")).exists()
-                else Path(zpath(dir_name / "DOSCAR.lobster"))
-            )
+        band_overlaps_path = Path(
+            zpath(str((dir_name / "bandOverlaps.lobster").as_posix()))
         )
-        lobsterin_path = Path(zpath(dir_name / "lobsterin"))
-        lobsterout_path = Path(zpath(dir_name / "lobsterout"))
+        charge_path = Path(zpath(str((dir_name / "CHARGE.lobster").as_posix())))
+        doscar_path = Path(
+            zpath(str((dir_name / "DOSCAR.LSO.lobster").as_posix()))
+            if Path(zpath(str((dir_name / "DOSCAR.LSO.lobster").as_posix()))).exists()
+            else Path(zpath(str((dir_name / "DOSCAR.lobster").as_posix())))
+        )
+        lobsterin_path = Path(zpath(str((dir_name / "lobsterin").as_posix())))
+        lobsterout_path = Path(zpath(str((dir_name / "lobsterout").as_posix())))
         potcar_path = (
-            Path(zpath(dir_name / "POTCAR"))
-            if Path(zpath(dir_name / "POTCAR")).exists()
+            Path(zpath(str((dir_name / "POTCAR").as_posix())))
+            if Path(zpath(str((dir_name / "POTCAR").as_posix()))).exists()
             else None
         )
-        structure_path = Path(zpath(dir_name / "POSCAR"))
-        vasprun_path = Path(zpath(dir_name / "vasprun.xml"))
+        structure_path = Path(zpath(str((dir_name / "CONTCAR").as_posix())))
+        vasprun_path = Path(zpath(str((dir_name / "vasprun.xml").as_posix())))
 
         # Update calc quality kwargs supplied by user
         calc_quality_kwargs_updated = {
@@ -590,6 +594,7 @@ class CalcQualitySummary(BaseModel):
             "bva_comp": True,
             **calc_quality_kwargs,
         }
+
         cal_quality_dict = Analysis.get_lobster_calc_quality_summary(
             path_to_poscar=structure_path,
             path_to_vasprun=vasprun_path,
@@ -610,20 +615,20 @@ class StrongestBonds(BaseModel):
     LobsterPy is used for the extraction.
     """
 
-    which_bonds: Optional[str] = Field(
+    which_bonds: str | None = Field(
         None,
         description="Denotes whether the information "
         "is for cation-anion pairs or all bonds",
     )
-    strongest_bonds_icoop: Optional[dict] = Field(
+    strongest_bonds_icoop: dict | None = Field(
         None,
         description="Dict with infos on bond strength and bond length based on ICOOP.",
     )
-    strongest_bonds_icohp: Optional[dict] = Field(
+    strongest_bonds_icohp: dict | None = Field(
         None,
         description="Dict with infos on bond strength and bond length based on ICOHP.",
     )
-    strongest_bonds_icobi: Optional[dict] = Field(
+    strongest_bonds_icobi: dict | None = Field(
         None,
         description="Dict with infos on bond strength and bond length based on ICOBI.",
     )
@@ -640,96 +645,96 @@ class LobsterTaskDocument(StructureMetadata, extra="allow"):  # type: ignore[cal
         default_factory=datetime_str,
         description="Timestamp for this task document was last updated",
     )
-    charges: Optional[Charge] = Field(
+    charges: Charge | None = Field(
         None,
         description="pymatgen Charge obj. Contains atomic charges based on Mulliken "
         "and Loewdin charge analysis",
     )
     lobsterout: LobsteroutModel = Field(description="Lobster out data")
     lobsterin: LobsterinModel = Field(description="Lobster calculation inputs")
-    lobsterpy_data: Optional[CondensedBondingAnalysis] = Field(
+    lobsterpy_data: CondensedBondingAnalysis | None = Field(
         None, description="Model describing the LobsterPy data"
     )
-    lobsterpy_text: Optional[str] = Field(
+    lobsterpy_text: str | None = Field(
         None, description="Stores LobsterPy automatic analysis summary text"
     )
-    calc_quality_summary: Optional[CalcQualitySummary] = Field(
+    calc_quality_summary: CalcQualitySummary | None = Field(
         None,
         description="Model summarizing results of lobster runs like charge spillings, "
         "band overlaps, DOS comparisons with VASP runs and quantum chemical LOBSTER "
         "charge sign comparisons with BVA method",
     )
-    calc_quality_text: Optional[str] = Field(
+    calc_quality_text: str | None = Field(
         None, description="Stores calculation quality analysis summary text"
     )
-    strongest_bonds: Optional[StrongestBonds] = Field(
+    strongest_bonds: StrongestBonds | None = Field(
         None,
         description="Describes the strongest cation-anion ICOOP, ICOBI and ICOHP bonds",
     )
-    lobsterpy_data_cation_anion: Optional[CondensedBondingAnalysis] = Field(
+    lobsterpy_data_cation_anion: CondensedBondingAnalysis | None = Field(
         None, description="Model describing the LobsterPy data"
     )
-    lobsterpy_text_cation_anion: Optional[str] = Field(
+    lobsterpy_text_cation_anion: str | None = Field(
         None,
         description="Stores LobsterPy automatic analysis summary text",
     )
-    strongest_bonds_cation_anion: Optional[StrongestBonds] = Field(
+    strongest_bonds_cation_anion: StrongestBonds | None = Field(
         None,
         description="Describes the strongest cation-anion ICOOP, ICOBI and ICOHP bonds",
     )
-    dos: Optional[LobsterCompleteDos] = Field(
+    dos: LobsterCompleteDos | None = Field(
         None, description="pymatgen pymatgen.io.lobster.Doscar.completedos data"
     )
-    lso_dos: Optional[LobsterCompleteDos] = Field(
+    lso_dos: LobsterCompleteDos | None = Field(
         None, description="pymatgen pymatgen.io.lobster.Doscar.completedos data"
     )
-    madelung_energies: Optional[MadelungEnergies] = Field(
+    madelung_energies: MadelungEnergies | None = Field(
         None,
         description="pymatgen Madelung energies obj. Contains madelung energies"
         "based on Mulliken and Loewdin charges",
     )
-    site_potentials: Optional[SitePotential] = Field(
+    site_potentials: SitePotential | None = Field(
         None,
         description="pymatgen Site potentials obj. Contains site potentials "
         "based on Mulliken and Loewdin charges",
     )
-    gross_populations: Optional[Grosspop] = Field(
+    gross_populations: Grosspop | None = Field(
         None,
         description="pymatgen Grosspopulations obj. Contains gross populations "
         " based on Mulliken and Loewdin charges ",
     )
-    band_overlaps: Optional[Bandoverlaps] = Field(
+    band_overlaps: Bandoverlaps | None = Field(
         None,
         description="pymatgen Bandoverlaps obj for each k-point from"
         " bandOverlaps.lobster file if it exists",
     )
-    cohp_data: Optional[CompleteCohp] = Field(
+    cohp_data: CompleteCohp | None = Field(
         None, description="pymatgen CompleteCohp object with COHP data"
     )
-    coop_data: Optional[CompleteCohp] = Field(
+    coop_data: CompleteCohp | None = Field(
         None, description="pymatgen CompleteCohp object with COOP data"
     )
-    cobi_data: Optional[CompleteCohp] = Field(
+    cobi_data: CompleteCohp | None = Field(
         None, description="pymatgen CompleteCohp object with COBI data"
     )
-    icohp_list: Optional[Icohplist] = Field(
+    icohp_list: Icohplist | None = Field(
         None, description="pymatgen Icohplist object with ICOHP data"
     )
-    icoop_list: Optional[Icohplist] = Field(
+    icoop_list: Icohplist | None = Field(
         None, description="pymatgen Icohplist object with ICOOP data"
     )
-    icobi_list: Optional[Icohplist] = Field(
+    icobi_list: Icohplist | None = Field(
         None, description="pymatgen Icohplist object with ICOBI data"
     )
 
-    schema: str = Field(
+    atomate2_version: str = Field(
         __version__, description="Version of atomate2 used to create the document"
     )
 
     @classmethod
     @requires(
         Analysis,
-        "LobsterTaskDocument requires `lobsterpy` and `ijson` to function properly. "
+        "LobsterTaskDocument requires lobsterpy and ijson to function properly. "
         "Please reinstall atomate2 using atomate2[lobster]",
     )
     def from_directory(
@@ -787,25 +792,35 @@ class LobsterTaskDocument(StructureMetadata, extra="allow"):  # type: ignore[cal
         dir_name = Path(dir_name)
 
         # Read in lobsterout and lobsterin
-        lobsterout_doc = Lobsterout(Path(zpath(dir_name / "lobsterout"))).get_doc()
+        lobsterout_doc = Lobsterout(
+            Path(zpath(str((dir_name / "lobsterout").as_posix())))
+        ).get_doc()
         lobster_out = LobsteroutModel(**lobsterout_doc)
         lobster_in = LobsterinModel(
-            **Lobsterin.from_file(Path(zpath(dir_name / "lobsterin")))
+            **Lobsterin.from_file(Path(zpath(str((dir_name / "lobsterin").as_posix()))))
         )
 
-        icohplist_path = Path(zpath(dir_name / "ICOHPLIST.lobster"))
-        icooplist_path = Path(zpath(dir_name / "ICOOPLIST.lobster"))
-        icobilist_path = Path(zpath(dir_name / "ICOBILIST.lobster"))
-        cohpcar_path = Path(zpath(dir_name / "COHPCAR.lobster"))
-        charge_path = Path(zpath(dir_name / "CHARGE.lobster"))
-        cobicar_path = Path(zpath(dir_name / "COBICAR.lobster"))
-        coopcar_path = Path(zpath(dir_name / "COOPCAR.lobster"))
-        doscar_path = Path(zpath(dir_name / "DOSCAR.lobster"))
-        structure_path = Path(zpath(dir_name / "POSCAR"))
-        madelung_energies_path = Path(zpath(dir_name / "MadelungEnergies.lobster"))
-        site_potentials_path = Path(zpath(dir_name / "SitePotentials.lobster"))
-        gross_populations_path = Path(zpath(dir_name / "GROSSPOP.lobster"))
-        band_overlaps_path = Path(zpath(dir_name / "bandOverlaps.lobster"))
+        icohplist_path = Path(zpath(str((dir_name / "ICOHPLIST.lobster").as_posix())))
+        icooplist_path = Path(zpath(str((dir_name / "ICOOPLIST.lobster").as_posix())))
+        icobilist_path = Path(zpath(str((dir_name / "ICOBILIST.lobster").as_posix())))
+        cohpcar_path = Path(zpath(str((dir_name / "COHPCAR.lobster").as_posix())))
+        charge_path = Path(zpath(str((dir_name / "CHARGE.lobster").as_posix())))
+        cobicar_path = Path(zpath(str((dir_name / "COBICAR.lobster").as_posix())))
+        coopcar_path = Path(zpath(str((dir_name / "COOPCAR.lobster").as_posix())))
+        doscar_path = Path(zpath(str((dir_name / "DOSCAR.lobster").as_posix())))
+        structure_path = Path(zpath(str((dir_name / "CONTCAR").as_posix())))
+        madelung_energies_path = Path(
+            zpath(str((dir_name / "MadelungEnergies.lobster").as_posix()))
+        )
+        site_potentials_path = Path(
+            zpath(str((dir_name / "SitePotentials.lobster").as_posix()))
+        )
+        gross_populations_path = Path(
+            zpath(str((dir_name / "GROSSPOP.lobster").as_posix()))
+        )
+        band_overlaps_path = Path(
+            zpath(str((dir_name / "bandOverlaps.lobster").as_posix()))
+        )
 
         icohp_list = icoop_list = icobi_list = None
         if icohplist_path.exists():
@@ -827,34 +842,32 @@ class LobsterTaskDocument(StructureMetadata, extra="allow"):  # type: ignore[cal
         calc_quality_text = None
         describe = None
         describe_ionic = None
-        if analyze_outputs:
-            if (
-                icohplist_path.exists()
-                and cohpcar_path.exists()
-                and charge_path.exists()
-            ):
-                (
-                    condensed_bonding_analysis,
-                    describe,
-                    sb_all,
-                ) = CondensedBondingAnalysis.from_directory(
-                    dir_name,
-                    save_cohp_plots=save_cohp_plots,
-                    plot_kwargs=plot_kwargs,
-                    lobsterpy_kwargs=lobsterpy_kwargs,
-                    which_bonds="all",
-                )
-                (
-                    condensed_bonding_analysis_ionic,
-                    describe_ionic,
-                    sb_ionic,
-                ) = CondensedBondingAnalysis.from_directory(
-                    dir_name,
-                    save_cohp_plots=save_cohp_plots,
-                    plot_kwargs=plot_kwargs,
-                    lobsterpy_kwargs=lobsterpy_kwargs,
-                    which_bonds="cation-anion",
-                )
+
+        if analyze_outputs and (
+            icohplist_path.exists() and cohpcar_path.exists() and charge_path.exists()
+        ):
+            (
+                condensed_bonding_analysis,
+                describe,
+                sb_all,
+            ) = CondensedBondingAnalysis.from_directory(
+                dir_name,
+                save_cohp_plots=save_cohp_plots,
+                plot_kwargs=plot_kwargs,
+                lobsterpy_kwargs=lobsterpy_kwargs,
+                which_bonds="all",
+            )
+            (
+                condensed_bonding_analysis_ionic,
+                describe_ionic,
+                sb_ionic,
+            ) = CondensedBondingAnalysis.from_directory(
+                dir_name,
+                save_cohp_plots=save_cohp_plots,
+                plot_kwargs=plot_kwargs,
+                lobsterpy_kwargs=lobsterpy_kwargs,
+                which_bonds="cation-anion",
+            )
             # Get lobster calculation quality summary data
 
             calc_quality_summary = CalcQualitySummary.from_directory(
@@ -879,7 +892,7 @@ class LobsterTaskDocument(StructureMetadata, extra="allow"):  # type: ignore[cal
 
         # Read in LSO DOS
         lso_dos = None
-        doscar_lso_path = Path(zpath(dir_name / "DOSCAR.LSO.lobster"))
+        doscar_lso_path = Path(zpath(str((dir_name / "DOSCAR.LSO.lobster").as_posix())))
         if store_lso_dos and doscar_lso_path.exists():
             doscar_lso_lobster = Doscar(
                 doscar=doscar_lso_path, structure_file=structure_path
@@ -954,7 +967,9 @@ class LobsterTaskDocument(StructureMetadata, extra="allow"):  # type: ignore[cal
             if describe_ionic is not None
             else None,
             strongest_bonds_cation_anion=sb_ionic,
-            calc_quality_summary=calc_quality_summary,
+            calc_quality_summary=calc_quality_summary
+            if calc_quality_summary is not None
+            else None,
             calc_quality_text=" ".join(calc_quality_text)
             if calc_quality_text is not None
             else None,
@@ -1057,12 +1072,6 @@ class LobsterTaskDocument(StructureMetadata, extra="allow"):  # type: ignore[cal
                     data, allow_bson=True, strict=True, enum_values=True
                 )
                 json.dump(monty_encoded_json_doc, file)
-                file.write(",")
-                data = {"builder_meta": doc.builder_meta}  # add builder metadata
-                monty_encoded_json_doc = jsanitize(
-                    data, allow_bson=False, strict=True, enum_values=True
-                )
-                json.dump(monty_encoded_json_doc, file)
                 del data, monty_encoded_json_doc
                 file.write("]")
 
@@ -1159,7 +1168,7 @@ def _replace_inf_values(data: Union[dict[Any, Any], list[Any]]) -> None:
     """
     if isinstance(data, dict):
         for key, value in data.items():
-            if isinstance(value, (dict, list)):
+            if isinstance(value, dict | list):
                 _replace_inf_values(
                     value
                 )  # Recursively process nested dictionaries and lists
@@ -1167,7 +1176,7 @@ def _replace_inf_values(data: Union[dict[Any, Any], list[Any]]) -> None:
                 data[key] = "-Infinity"  # Replace -inf with a string representation
     elif isinstance(data, list):
         for index, item in enumerate(data):
-            if isinstance(item, (dict, list)):
+            if isinstance(item, dict | list):
                 _replace_inf_values(
                     item
                 )  # Recursively process nested dictionaries and lists
@@ -1263,6 +1272,7 @@ def _get_strong_bonds(
         bondlist["list_atom2"],
         bondlist["list_icohp"],
         bondlist["list_length"],
+        strict=True,
     ):
         bonds.append(f"{a.rstrip('0123456789')}-{b.rstrip('0123456789')}")
         icohp_all.append(sum(c.values()))
@@ -1285,7 +1295,7 @@ def _get_strong_bonds(
     else:
         prop = "icohp"
 
-    bond_dict = {}
+    bond_dict: dict[str, dict[str, Union[float, str]]] = {}
     for idx, lab in enumerate(bond_labels_unique):
         label = lab.split("-")
         label.sort()
@@ -1295,32 +1305,28 @@ def _get_strong_bonds(
             if label == rel_bnd_list:
                 if prop == "icohp":
                     index = np.argmin(sep_icohp[idx])
-                    bond_dict.update(
-                        {
-                            rel_bnd: {
-                                "bond_strength": min(sep_icohp[idx]),
-                                "length": sep_lengths[idx][index],
-                            }
+                    bond_dict |= {
+                        rel_bnd: {
+                            "bond_strength": min(sep_icohp[idx]),
+                            "length": sep_lengths[idx][index],
                         }
-                    )
+                    }
                 else:
                     index = np.argmax(sep_icohp[idx])
-                    bond_dict.update(
-                        {
-                            rel_bnd: {
-                                "bond_strength": max(sep_icohp[idx]),
-                                "length": sep_lengths[idx][index],
-                            }
+                    bond_dict |= {
+                        rel_bnd: {
+                            "bond_strength": max(sep_icohp[idx]),
+                            "length": sep_lengths[idx][index],
                         }
-                    )
+                    }
     return bond_dict
 
 
 def read_saved_json(
     filename: str, pymatgen_objs: bool = True, query: str = "structure"
 ) -> dict[str, Any]:
-    """
-    Read the data from  *.json.gz file corresponding to query.
+    r"""
+    Read the data from  \*.json.gz files corresponding to query.
 
     Uses ijson to parse specific keys(memory efficient)
 

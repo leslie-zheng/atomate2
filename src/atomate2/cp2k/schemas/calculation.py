@@ -5,9 +5,9 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from shutil import which
-from typing import Any, Optional, Union
+from typing import Any, Union
 
-from jobflow.utils import ValueEnum
+from emmet.core.types.enums import ValueEnum
 from pydantic import BaseModel, Field, field_validator
 from pymatgen.command_line.bader_caller import BaderAnalysis
 from pymatgen.core.structure import Molecule, Structure
@@ -16,7 +16,7 @@ from pymatgen.core.units import Ha_to_eV
 from pymatgen.electronic_structure.bandstructure import BandStructure
 from pymatgen.electronic_structure.dos import Dos
 from pymatgen.io.common import VolumetricData
-from pymatgen.io.cp2k.inputs import BasisFile, DataFile, PotentialFile
+from pymatgen.io.cp2k.inputs import BasisFile, Cp2kInput, DataFile, PotentialFile
 from pymatgen.io.cp2k.outputs import Cp2kOutput, parse_energy_file
 from typing_extensions import Self
 
@@ -71,7 +71,9 @@ class CalculationInput(BaseModel):
         None, description="Description of parameters used for each atomic kind"
     )
 
-    cp2k_input: dict = Field(None, description="The cp2k input used for this task")
+    cp2k_input: Union[dict, Cp2kInput] = Field(
+        None, description="The cp2k input used for this task"
+    )
 
     dft: dict = Field(
         None,
@@ -87,8 +89,8 @@ class CalculationInput(BaseModel):
     @classmethod
     def remove_unnecessary(cls, atomic_kind_info: dict) -> dict:
         """Remove unnecessary entry from atomic_kind_info."""
-        for key in atomic_kind_info:
-            if "total_pseudopotential_energy" in atomic_kind_info[key]:
+        for key, value in atomic_kind_info.items():
+            if "total_pseudopotential_energy" in value:
                 del atomic_kind_info[key]["total_pseudopotential_energy"]
         return atomic_kind_info
 
@@ -150,40 +152,40 @@ class CalculationOutput(BaseModel):
     structure: Union[Structure, Molecule] = Field(
         None, description="The final structure/molecule from the calculation"
     )
-    efermi: Optional[float] = Field(
+    efermi: float | None = Field(
         None, description="The Fermi level from the calculation in eV"
     )
     is_metal: bool = Field(None, description="Whether the system is metallic")
-    bandgap: Optional[float] = Field(
+    bandgap: float | None = Field(
         None, description="The band gap from the calculation in eV"
     )
     v_hartree: Union[dict[int, list[float]], None] = Field(
         None, description="Plane averaged electrostatic potential"
     )
-    cbm: Optional[float] = Field(
+    cbm: float | None = Field(
         None,
         description="The conduction band minimum in eV (if system is not metallic)",
     )
-    vbm: Optional[float] = Field(
+    vbm: float | None = Field(
         None, description="The valence band maximum in eV (if system is not metallic)"
     )
     ionic_steps: list[dict[str, Any]] = Field(
         None, description="Energy, forces, and structure for each ionic step"
     )
-    locpot: dict[int, list[float]] = Field(
+    locpot: Union[dict[int, list[float]], None] = Field(
         None, description="Average of the local potential along the crystal axes"
     )
     run_stats: RunStatistics = Field(
         None, description="Summary of runtime statistics for this calculation"
     )
 
-    scf: Optional[list] = Field(None, description="SCF optimization steps")
+    scf: list | None = Field(None, description="SCF optimization steps")
 
     @classmethod
     def from_cp2k_output(
         cls,
         output: Cp2kOutput,  # Must use auto_load kwarg when passed
-        v_hartree: Optional[VolumetricData] = None,
+        v_hartree: VolumetricData | None = None,
         store_trajectory: bool = False,
         store_scf: bool = False,
     ) -> Self:
@@ -272,7 +274,7 @@ class Calculation(BaseModel):
         description="Paths (relative to dir_name) of the CP2K output files "
         "associated with this calculation",
     )
-    bader: Optional[dict] = Field(None, description="Output from the bader software")
+    bader: dict | None = Field(None, description="Output from the bader software")
     run_type: RunType = Field(
         None, description="Calculation run type (e.g., HF, HSE06, PBE)"
     )
@@ -298,9 +300,7 @@ class Calculation(BaseModel):
         strip_dos_projections: bool = False,
         store_trajectory: bool = False,
         store_scf: bool = False,
-        store_volumetric_data: Optional[
-            tuple[str]
-        ] = SETTINGS.CP2K_STORE_VOLUMETRIC_DATA,
+        store_volumetric_data: tuple[str] | None = SETTINGS.CP2K_STORE_VOLUMETRIC_DATA,
     ) -> tuple[Self, dict[Cp2kObject, dict]]:
         """Create a CP2K calculation document from a directory and file paths.
 
@@ -478,19 +478,21 @@ def _get_basis_and_potential_files(dir_name: Path) -> dict[Cp2kObject, DataFile]
     the basis/potential contained in these files.
     """
     data: dict[Cp2kObject, DataFile] = {}
-    if Path.exists(dir_name / "BASIS"):
-        data[Cp2kObject.BASIS] = BasisFile.from_file(str(dir_name / "BASIS"))  # type: ignore[index]
-    if Path.exists(dir_name / "POTENTIAL"):
-        data[Cp2kObject.POTENTIAL] = PotentialFile.from_file(  # type: ignore[index]
-            str(dir_name / "POTENTIAL")
-        )
+    for filename, cls, cp2k_object in (
+        (dir_name / "BASIS", BasisFile, Cp2kObject.BASIS),
+        (dir_name / "POTENTIAL", PotentialFile, Cp2kObject.POTENTIAL),
+    ):
+        if filename.exists():
+            content = filename.read_text().strip()
+            if content not in ("None", ""):  # ignore empty files
+                data[cp2k_object] = cls.from_str(content)  # type: ignore[index]
     return data
 
 
 def _get_volumetric_data(
     dir_name: Path,
     output_file_paths: dict[Cp2kObject, str],
-    store_volumetric_data: Optional[tuple[str]],
+    store_volumetric_data: tuple[str] | None,
 ) -> dict[Cp2kObject, VolumetricData]:
     """
     Load volumetric data files from a directory.
@@ -522,9 +524,9 @@ def _get_volumetric_data(
         except Exception as err:
             raise ValueError(f"Failed to parse {file_type} at {file}.") from err
 
-    for file_type in volumetric_data:
+    for file_type, data in volumetric_data.items():
         if file_type.name in __is_stored_in_Ha__:
-            volumetric_data[file_type].scale(Ha_to_eV)
+            data.scale(Ha_to_eV)
 
     return volumetric_data
 
@@ -534,7 +536,7 @@ def _get_volumetric_data(
 # and it has to be requested (not default). Should this method grab overall
 # dos / elemental project dos if the complete dos is not available, or stick
 # to grabbing the complete dos?
-def _parse_dos(parse_dos: Union[str, bool], cp2k_output: Cp2kOutput) -> Optional[Dos]:
+def _parse_dos(parse_dos: Union[str, bool], cp2k_output: Cp2kOutput) -> Dos | None:
     """
     Parse DOS outputs from cp2k calculation.
 
@@ -561,7 +563,7 @@ def _parse_dos(parse_dos: Union[str, bool], cp2k_output: Cp2kOutput) -> Optional
 
 def _parse_bandstructure(
     parse_bandstructure: Union[str, bool], cp2k_output: Cp2kOutput
-) -> Optional[BandStructure]:
+) -> BandStructure | None:
     """
     Get the band structure.
 
@@ -575,7 +577,7 @@ def _parse_bandstructure(
     return None
 
 
-def _parse_trajectory(cp2k_output: Cp2kOutput) -> Optional[Trajectory]:
+def _parse_trajectory(cp2k_output: Cp2kOutput) -> Trajectory | None:
     """
     Grab a Trajectory object given a cp2k output object.
 

@@ -1,390 +1,283 @@
-"""Utils for using a force field (aka an interatomic potential).
-
-The following code has been taken and modified from
-https://github.com/materialsvirtuallab/m3gnet
-The code has been released under BSD 3-Clause License
-and the following copyright applies:
-Copyright (c) 2022, Materials Virtual Lab.
-"""
+"""Utils for using a force field (aka an interatomic potential)."""
 
 from __future__ import annotations
 
-import contextlib
-import io
-import json
-import sys
+import inspect
 import warnings
 from contextlib import contextmanager
+from dataclasses import dataclass, field
+from enum import Enum
+from functools import cached_property
+from importlib import import_module
+from importlib.metadata import PackageNotFoundError, version
+from importlib.util import find_spec
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
-from ase.calculators.calculator import PropertyNotImplementedError
-from ase.calculators.singlepoint import SinglePointCalculator
-from ase.constraints import FixSymmetry
-from ase.io import Trajectory as AseTrajectory
-from ase.optimize import BFGS, FIRE, LBFGS, BFGSLineSearch, LBFGSLineSearch, MDMin
-from ase.optimize.sciopt import SciPyFminBFGS, SciPyFminCG
+from ase.calculators.calculator import Calculator
+from ase.units import Bohr
 from monty.json import MontyDecoder
-from monty.serialization import dumpfn
-from pymatgen.core.structure import Molecule, Structure
-from pymatgen.core.trajectory import Trajectory as PmgTrajectory
-from pymatgen.io.ase import AseAtomsAdaptor
-
-from atomate2.forcefields import MLFF
-from atomate2.forcefields.schemas import ForcefieldResult
-
-try:
-    from ase.filters import FrechetCellFilter
-except ImportError:
-    FrechetCellFilter = None
-    warnings.warn(
-        "Due to errors in the implementation of gradients in the ASE"
-        " ExpCellFilter, we recommend installing ASE from gitlab\n"
-        "    pip install git+https://gitlab.com/ase/ase.git\n"
-        "rather than PyPi to access FrechetCellFilter. See\n"
-        "    https://wiki.fysik.dtu.dk/ase/ase/filters.html#the-frechetcellfilter-class\n"
-        "for more details. Otherwise, you must specify an alternate ASE Filter.",
-        stacklevel=2,
-    )
+from typing_extensions import assert_never, deprecated
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
-    from os import PathLike
-    from typing import Any, Literal
+    from collections.abc import Callable, Generator
+    from typing import Any
 
-    from ase import Atoms
-    from ase.calculators.calculator import Calculator
-    from ase.filters import Filter
-    from ase.io.trajectory import TrajectoryReader
-    from ase.optimize.optimize import Optimizer
+    try:
+        from torch import dtype as torch_dtype
+    except ImportError:
+        torch_dtype = str
 
-OPTIMIZERS = {
-    "FIRE": FIRE,
-    "BFGS": BFGS,
-    "LBFGS": LBFGS,
-    "LBFGSLineSearch": LBFGSLineSearch,
-    "MDMin": MDMin,
-    "SciPyFminCG": SciPyFminCG,
-    "SciPyFminBFGS": SciPyFminBFGS,
-    "BFGSLineSearch": BFGSLineSearch,
+    from atomate2.ase.schemas import AseResult
+
+_FORCEFIELD_DATA_OBJECTS = ["trajectory", "ionic_steps"]
+
+
+class MLFF(Enum):  # TODO inherit from StrEnum when 3.11+
+    """Names of ML force fields."""
+
+    MACE = "MACE"  # This is MACE-MP-0 (medium), deprecated
+    MACE_MP_0 = "MACE-MP-0"
+    MACE_MPA_0 = "MACE-MPA-0"
+    MACE_MP_0B3 = "MACE-MP-0b3"
+    GAP = "GAP"
+    M3GNet = "M3GNet"
+    CHGNet = "CHGNet"
+    Forcefield = "Forcefield"  # default placeholder option
+    NEP = "NEP"
+    Nequip = "Nequip"
+    SevenNet = "SevenNet"
+    MATPES_R2SCAN = "MatPES-r2SCAN"
+    MATPES_PBE = "MatPES-PBE"
+    DeepMD = "DeepMD"
+    Allegro = "Allegro"
+    FAIRChem = "FAIRChem"
+    MatterSim = "MatterSim"
+    UPET = "UPET"
+
+    @classmethod
+    def _missing_(cls, value: Any) -> Any:
+        """Allow input of str(MLFF) as valid enum."""
+        if isinstance(value, str):
+            value = value.split("MLFF.")[-1]
+        for member in cls:
+            if member.name == value:
+                return member
+        return None
+
+
+_DEFAULT_CALCULATOR_KWARGS: dict[MLFF, Any] = {
+    MLFF.CHGNet: {"stress_unit": "eV/A3"},
+    MLFF.FAIRChem: {
+        "predict_unit": {"model_name": "uma-s-1p1"},
+        "task_name": "omat",
+    },
+    MLFF.GAP: {"args_str": "IP GAP", "param_filename": "gap.xml"},
+    MLFF.M3GNet: {"stress_unit": "eV/A3"},
+    MLFF.MACE: {"model": "medium"},
+    MLFF.MACE_MP_0: {"model": "medium"},
+    MLFF.MACE_MP_0B3: {"model": "medium-0b3"},
+    MLFF.MACE_MPA_0: {"model": "medium-mpa-0"},
+    MLFF.MATPES_PBE: {
+        "architecture": "TensorNet",
+        "version": "2025.2",
+        "stress_unit": "eV/A3",
+    },
+    MLFF.MATPES_R2SCAN: {
+        "architecture": "TensorNet",
+        "version": "2025.2",
+        "stress_unit": "eV/A3",
+    },
+    MLFF.NEP: {"model_filename": "nep.txt"},
+    MLFF.SevenNet: {"model": "7net-0"},
+    MLFF.UPET: {
+        "model": "pet-mad-s",
+        "version": "1.5.0",
+    },
 }
 
 
-def _get_pymatgen_trajectory_from_observer(
-    trajectory_observer: Any, frame_property_keys: list[str]
-) -> PmgTrajectory:
-    to_singular = {"energies": "energy", "stresses": "stress"}
+def _get_standardized_mlff(force_field_name: str | MLFF) -> MLFF:
+    """Get the standardized force field name.
 
-    if hasattr(trajectory_observer, "as_dict"):
-        traj = trajectory_observer.as_dict()
-    else:
-        traj = trajectory_observer.__dict__
+    Parameters
+    ----------
+    force_field_name : str or .MLFF
+        The name of the force field
+        For str, accept both with and without the `MLFF.` prefix.
 
-    n_md_steps = len(traj["cells"])
-    species = AseAtomsAdaptor.get_structure(traj["atoms"]).species
+    Returns
+    -------
+    MLFF: the name of the forcefield
+    """
+    if isinstance(force_field_name, str):
+        # ensure `force_field_name` uses enum format
+        if force_field_name.startswith("MLFF."):
+            force_field_name = force_field_name.split("MLFF.")[-1]
 
-    structures = [
-        Structure(
-            lattice=traj["cells"][idx],
-            coords=traj["atom_positions"][idx],
-            species=species,
-            coords_are_cartesian=True,
+        if force_field_name in MLFF.__members__:
+            force_field_name = MLFF[force_field_name]
+        elif force_field_name in [v.value for v in MLFF]:
+            force_field_name = MLFF(force_field_name)
+        else:
+            raise ValueError(
+                f"force_field_name={force_field_name} is not a valid MLFF name."
+            )
+
+    if force_field_name == MLFF.MACE:
+        warnings.warn(
+            "Because the default MP-trained MACE model is constantly evolving, "
+            "we no longer recommend using `MACE` or `MLFF.MACE` to specify "
+            "a MACE model. For reproducibility purposes, specifying `MACE` "
+            "will still default to MACE-MP-0 (medium), which is identical to "
+            "specifying `MLFF.MACE_MP_0`.",
+            category=UserWarning,
+            stacklevel=2,
         )
-        for idx in range(n_md_steps)
-    ]
-
-    frame_properties = [
-        {
-            to_singular.get(key, key): traj[key][idx]
-            for key in frame_property_keys
-            if key in traj
-        }
-        for idx in range(n_md_steps)
-    ]
-
-    return PmgTrajectory.from_structures(
-        structures,
-        frame_properties=frame_properties,
-        constant_lattice=False,
-    )
+    return force_field_name
 
 
-class TrajectoryObserver:
-    """Trajectory observer.
+@deprecated("Use _get_standardized_mlff instead.")
+def _get_formatted_ff_name(force_field_name: str | MLFF) -> str:
+    """
+    Get the standardized force field name.
 
-    This is a hook in the relaxation process that saves the intermediate structures.
+    Parameters
+    ----------
+    force_field_name : str or .MLFF
+        The name of the force field
+
+    Returns
+    -------
+    str : the name of the forcefield from MLFF
+    """
+    force_field_name = _get_standardized_mlff(force_field_name)
+    return str(force_field_name)
+
+
+@dataclass
+class ForceFieldMixin:
+    """Mix-in class for force-fields.
+
+    All basic forcefield jobs should inherit from this class
+    to easily access `ase_calculator`.
     """
 
-    def __init__(self, atoms: Atoms, store_md_outputs: bool = False) -> None:
-        """Initialize the Observer.
+    force_field_name: str | MLFF | dict = MLFF.Forcefield
+    calculator_meta: str | MLFF | dict | None = None
+    calculator_kwargs: dict[str, Any] = field(default_factory=dict)
+    task_document_kwargs: dict[str, Any] = field(default_factory=dict)
 
-        Parameters
+    def __post_init__(self) -> None:
+        """Validate input data types.
+
+        Attributes
         ----------
-        atoms (Atoms): the structure to observe.
+        force_field_name : str, MLFF, or dict
+            If a str or MLFF: Name of the forcefield which will be
+            correctly deserialized/standardized if the forcefield is
+            a known `MLFF`.
+            If a dict, a monty-style dict.
 
-        Returns
-        -------
-            None
+        calculator_meta : MLFF, str, or dict
+            Actual metadata to instantiate the ASE calculator.
+            If a MLFF, that default interface in `ase_calculator` will be used.
+            If an import-style str or monty-style dict, the calculator will
+            be dynamically loaded.
+
+        calculator_kwargs : dict = {}
+            Keyword arguments that will get passed to the ASE calculator.
+
+        task_document_kwargs: dict = {}
+            Additional keyword args passed to :obj:`.ForceFieldTaskDocument()
+            or another final document schema.
         """
-        self.atoms = atoms
-        self.energies: list[float] = []
-        self.forces: list[np.ndarray] = []
-        self.stresses: list[np.ndarray] = []
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()  # type: ignore[misc]
 
-        self._store_magmoms = True
-        self.magmoms: list[np.ndarray] = []
+        mlff: MLFF = MLFF.Forcefield  # Fallback to placeholder
+        if isinstance(self.force_field_name, dict):
+            calculator_meta: str | dict[str, Any] | MLFF = self.force_field_name.copy()
 
-        self.atom_positions: list[np.ndarray] = []
-        self.cells: list[np.ndarray] = []
+        elif (
+            (
+                inspect.isclass(self.force_field_name)
+                and issubclass(self.force_field_name, Calculator)
+            )
+            or isinstance(self.force_field_name, Calculator)
+            or inspect.isfunction(self.force_field_name)  # for mace_mp specifically
+        ):
+            # can happen with deserialization of legacy documents from JSON
+            calculator_meta = ".".join(
+                getattr(self.force_field_name, k) for k in ("__module__", "__name__")
+            )
 
-        self._store_md_outputs = store_md_outputs
-        # `self.{velocities,temperatures}` always initialized,
-        # but data is only stored / saved to trajectory for MD runs
-        self.velocities: list[np.ndarray] = []
-        self.temperatures: list[float] = []
+        else:
+            mlff = _get_standardized_mlff(self.force_field_name)
+            # On round-trip deserialization, `calculator_meta` will be a dict
+            # of the calculator information
+            calculator_meta = self.calculator_meta or mlff
 
-    def __call__(self) -> None:
-        """Save the properties of an Atoms during the relaxation."""
-        self.energies.append(self.compute_energy())
-        self.forces.append(self.atoms.get_forces())
-        # MD needs kinetic energy parts of stress, relaxations do not
-        # When _store_md_outputs is True, ideal gas contribution to
-        # stress is included.
-        self.stresses.append(
-            self.atoms.get_stress(include_ideal_gas=self._store_md_outputs)
-        )
-
-        if self._store_magmoms:
+        # avoids unintentional deserialization from monty on round-trip
+        if isinstance(calculator_meta, dict):
+            # Should always be @callable but being safe here to be sure
+            cls_key = next(k for k in ("@callable", "@class") if k in calculator_meta)
+            self.calculator_meta: str | MLFF = ".".join(
+                calculator_meta[k] for k in ("@module", cls_key)
+            )
+        else:
             try:
-                self.magmoms.append(self.atoms.get_magnetic_moments())
-            except PropertyNotImplementedError:
-                self._store_magmoms = False
+                self.calculator_meta = _get_standardized_mlff(calculator_meta)
+            except ValueError:
+                self.calculator_meta = calculator_meta
 
-        self.atom_positions.append(self.atoms.get_positions())
-        self.cells.append(self.atoms.get_cell()[:])
+        self.force_field_name: str = str(mlff)  # Narrow-down type for mypy
 
-        if self._store_md_outputs:
-            self.velocities.append(self.atoms.get_velocities())
-            self.temperatures.append(self.atoms.get_temperature())
-
-    def compute_energy(self) -> float:
-        """
-        Calculate the energy, here we just use the potential energy.
-
-        Returns
-        -------
-            energy (float)
-        """
-        return self.atoms.get_potential_energy()
-
-    def save(
-        self, filename: str | PathLike | None, fmt: Literal["pmg", "ase"] = "ase"
-    ) -> None:
-        """
-        Save the trajectory file using monty.serialization.
-
-        Parameters
-        ----------
-        filename (str): filename to save the trajectory.
-
-        Returns
-        -------
-            None
-        """
-        filename = str(filename) if filename is not None else None
-        if fmt == "pmg":
-            self.to_pymatgen_trajectory(filename=filename)
-        elif fmt == "ase":
-            self.to_ase_trajectory(filename=filename)
-
-    def to_ase_trajectory(
-        self, filename: str | None = "atoms.traj"
-    ) -> TrajectoryReader:
-        """
-        Convert to an ASE .Trajectory.
-
-        Parameters
-        ----------
-        filename : str | None
-            Name of the file to write the ASE trajectory to.
-            If None, no file is written.
-        """
-        for idx in range(len(self.cells)):
-            atoms = self.atoms.copy()
-            atoms.set_positions(self.atom_positions[idx])
-            atoms.set_cell(self.cells[idx])
-
-            if self._store_md_outputs:
-                atoms.set_velocities(self.velocities[idx])
-
-            kwargs = {
-                "energy": self.energies[idx],
-                "forces": self.forces[idx],
-                "stress": self.stresses[idx],
-            }
-            if self._store_magmoms:
-                kwargs["magmom"] = self.magmoms[idx]
-
-            atoms.calc = SinglePointCalculator(atoms=atoms, **kwargs)
-            with AseTrajectory(filename, "a" if idx > 0 else "w", atoms=atoms) as file:
-                file.write()
-
-        return AseTrajectory(filename, "r")
-
-    def to_pymatgen_trajectory(
-        self, filename: str | None = "trajectory.json.gz"
-    ) -> PmgTrajectory:
-        """
-        Convert the trajectory to a pymatgen .Trajectory object.
-
-        Parameters
-        ----------
-        filename : str or None
-            Name of the file to write the pymatgen trajectory to.
-            If None, no file is written.
-        """
-        frame_property_keys = ["energy", "forces", "stress"]
-        if self._store_magmoms:
-            frame_property_keys += ["magmoms"]
-        if self._store_md_outputs:
-            frame_property_keys += ["velocities", "temperature"]
-
-        traj = _get_pymatgen_trajectory_from_observer(
-            self, frame_property_keys=frame_property_keys
-        )
-
-        if filename:
-            dumpfn(traj, filename)
-
-        return traj
-
-    def as_dict(self) -> dict:
-        """Make JSONable dict representation of the Trajectory."""
-        traj_dict = {
-            "energy": self.energies,
-            "forces": self.forces,
-            "stress": self.stresses,
-            "atom_positions": self.atom_positions,
-            "cells": self.cells,
-            "atoms": self.atoms,
-            "atomic_number": self.atoms.get_atomic_numbers(),
+        # Pad calculator_kwargs with default values, but permit user to override them
+        self.calculator_kwargs: dict[str, Any] = {
+            **_DEFAULT_CALCULATOR_KWARGS.get(mlff, {}),
+            **self.calculator_kwargs,
         }
 
-        if self._store_magmoms:
-            traj_dict["magmoms"] = self.magmoms
+        if not self.task_document_kwargs.get("force_field_name"):
+            self.task_document_kwargs["force_field_name"] = self.force_field_name
 
-        if self._store_md_outputs:
-            traj_dict.update(velocities=self.velocities, temperature=self.temperatures)
-        # sanitize dict
-        for key in traj_dict:
-            if all(isinstance(val, np.ndarray) for val in traj_dict[key]):
-                traj_dict[key] = [val.tolist() for val in traj_dict[key]]
-            elif isinstance(traj_dict[key], np.ndarray):
-                traj_dict[key] = traj_dict[key].tolist()
-        return traj_dict
+    def _run_ase_safe(self, *args, **kwargs) -> AseResult:
+        if not hasattr(self, "run_ase"):
+            raise NotImplementedError(
+                "You must implement a `run_ase` method to use this method."
+            )
+        with revert_default_dtype():
+            return self.run_ase(*args, **kwargs)
 
-
-class Relaxer:
-    """Relaxer is a class for structural relaxation."""
-
-    def __init__(
-        self,
-        calculator: Calculator,
-        optimizer: Optimizer | str = "FIRE",
-        relax_cell: bool = True,
-        fix_symmetry: bool = False,
-        symprec: float = 1e-2,
-    ) -> None:
-        """Initialize the Relaxer.
-
-        Parameters
-        ----------
-        calculator (ase Calculator): an ase calculator
-        optimizer (str or ase Optimizer): the optimization algorithm.
-        relax_cell (bool): if True, cell parameters will be optimized.
-        fix_symmetry (bool): if True, symmetry will be fixed during relaxation.
-        symprec (float): Tolerance for symmetry finding in case of fix_symmetry.
-        """
-        self.calculator = calculator
-
-        if isinstance(optimizer, str):
-            optimizer_obj = OPTIMIZERS.get(optimizer)
-        elif optimizer is None:
-            raise ValueError("Optimizer cannot be None")
-        else:
-            optimizer_obj = optimizer
-
-        self.opt_class: Optimizer = optimizer_obj
-        self.relax_cell = relax_cell
-        self.ase_adaptor = AseAtomsAdaptor()
-        self.fix_symmetry = fix_symmetry
-        self.symprec = symprec
-
-    def relax(
-        self,
-        atoms: Atoms,
-        fmax: float = 0.1,
-        steps: int = 500,
-        traj_file: str = None,
-        interval: int = 1,
-        verbose: bool = False,
-        cell_filter: Filter = FrechetCellFilter,
-        **kwargs,
-    ) -> ForcefieldResult:
-        """
-        Relax the structure.
-
-        Parameters
-        ----------
-        atoms : Atoms
-            The atoms for relaxation.
-        fmax : float
-            Total force tolerance for relaxation convergence.
-        steps : int
-            Max number of steps for relaxation.
-        traj_file : str
-            The trajectory file for saving.
-        interval : int
-            The step interval for saving the trajectories.
-        verbose : bool
-            If True, screen output will be shown.
-        **kwargs
-            Further kwargs.
-
-        Returns
-        -------
-            dict including optimized structure and the trajectory
-        """
-        if isinstance(atoms, (Structure, Molecule)):
-            atoms = self.ase_adaptor.get_atoms(atoms)
-        if self.fix_symmetry:
-            atoms.set_constraint(FixSymmetry(atoms, symprec=self.symprec))
-        atoms.set_calculator(self.calculator)
-        with contextlib.redirect_stdout(sys.stdout if verbose else io.StringIO()):
-            obs = TrajectoryObserver(atoms)
-            if self.relax_cell:
-                atoms = cell_filter(atoms)
-            optimizer = self.opt_class(atoms, **kwargs)
-            optimizer.attach(obs, interval=interval)
-            optimizer.run(fmax=fmax, steps=steps)
-            obs()
-        if traj_file is not None:
-            obs.save(traj_file)
-        if isinstance(atoms, cell_filter):
-            atoms = atoms.atoms
-
-        struct = self.ase_adaptor.get_structure(atoms)
-        traj = obs.to_pymatgen_trajectory(None)
-        is_force_conv = all(
-            np.linalg.norm(traj.frame_properties[-1]["forces"][idx]) < abs(fmax)
-            for idx in range(len(struct))
-        )
-        return ForcefieldResult(
-            final_structure=struct, trajectory=traj, is_force_converged=is_force_conv
+    def _get_calculator(self) -> Calculator:
+        """ASE calculator, can be overwritten by user."""
+        return ase_calculator(
+            self.calculator_meta,
+            **self.calculator_kwargs,
         )
 
+    @property
+    def mlff(self) -> MLFF:
+        """The MLFF enum corresponding to the force field name."""
+        return MLFF(str(self.force_field_name).split("MLFF.")[-1])
 
-def ase_calculator(calculator_meta: str | dict, **kwargs: Any) -> Calculator | None:
+    @cached_property
+    def ase_calculator_name(self) -> str:
+        """The name of the ASE calculator for schemas."""
+        if isinstance(self.calculator_meta, MLFF):
+            return str(self.force_field_name)
+        if isinstance(self.calculator_meta, str | dict):
+            calc_cls = _load_calc_cls(self.calculator_meta)
+            return calc_cls.__name__
+        assert_never(self.calculator_meta)
+
+
+def ase_calculator(
+    calculator_meta: str | MLFF | dict,
+    default_dtype: str | torch_dtype | None = None,
+    **kwargs: Any,
+) -> Calculator | None:
     """
     Create an ASE calculator from a given set of metadata.
 
@@ -400,7 +293,7 @@ def ase_calculator(calculator_meta: str | dict, **kwargs: Any) -> Calculator | N
                 "@callable": "CHGNetCalculator"
             }
         ```
-    args : optional args to pass to a calculator
+    default_dtype (str or pytorch dtype) : optional pytorch dtype to use if applicable
     kwargs : optional kwargs to pass to a calculator
 
     Returns
@@ -409,45 +302,193 @@ def ase_calculator(calculator_meta: str | dict, **kwargs: Any) -> Calculator | N
     """
     calculator = None
 
-    if isinstance(calculator_meta, str) and calculator_meta in map(str, MLFF):
-        calculator_name = MLFF(calculator_meta.split("MLFF.")[-1])
+    if (
+        isinstance(calculator_meta, str)
+        and (
+            calculator_meta in map(str, MLFF)
+            or calculator_meta in {m.value for m in MLFF}
+        )
+    ) or isinstance(calculator_meta, MLFF):
+        calculator_name = MLFF(calculator_meta)
 
-        if calculator_name == MLFF.CHGNet:
-            from chgnet.model.dynamics import CHGNetCalculator
+        match calculator_name:
+            # Simple APIs
+            case (
+                MLFF.DeepMD
+                | MLFF.GAP
+                | MLFF.MatterSim
+                | MLFF.NEP
+                | MLFF.SevenNet
+                | MLFF.UPET
+            ):
+                import_str = {
+                    MLFF.DeepMD: "deepmd.calculator.DP",
+                    MLFF.GAP: "quippy.potential.Potential",
+                    MLFF.MatterSim: "mattersim.forcefield.MatterSimCalculator",
+                    MLFF.NEP: "calorine.calculators.CPUNEP",
+                    MLFF.SevenNet: "sevenn.sevennet_calculator.SevenNetCalculator",
+                    MLFF.UPET: "upet.calculator.UPETCalculator",
+                }
+                _mod, _cls = import_str[calculator_name].rsplit(".", 1)
+                calculator = getattr(import_module(_mod), _cls, None)(**kwargs)
 
-            calculator = CHGNetCalculator(**kwargs)
+            case MLFF.CHGNet | MLFF.M3GNet | MLFF.MATPES_R2SCAN | MLFF.MATPES_PBE:
+                if calculator_name == MLFF.CHGNet:
+                    # Legacy interface to `chgnet` package
+                    try:
+                        from chgnet.model.dynamics import CHGNetCalculator
 
-        elif calculator_name == MLFF.M3GNet:
-            import matgl
-            from matgl.ext.ase import PESCalculator
+                        return CHGNetCalculator(**kwargs)
+                    except ImportError:
+                        pass
 
-            potential = matgl.load_model("M3GNet-MP-2021.2.8-PES")
-            calculator = PESCalculator(potential, **kwargs)
+                warnings.warn(
+                    "The default M3GNet, CHGNet, and MatPES models in matgl have been"
+                    "retrained on a newer 2025.2 version of the MatPES dataset. "
+                    "To use the older MPtrj-trained M3GNet or CHGNet, or the "
+                    "2025.1 versions of the MatPES models, use atomate2==0.1.3.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
 
-        elif calculator_name == MLFF.MACE:
-            from mace.calculators import mace_mp
+                import matgl
+                from matgl.ext.ase import PESCalculator
 
-            calculator = mace_mp(**kwargs)
+                # matgl >= 4.0 removed the DGL backend; matgl now targets
+                # PyTorch Geometric exclusively and all potentials load through
+                # the single ``matgl.ext.ase.PESCalculator``. Pre-trained weights
+                # use the ``<Architecture>-PES-<Dataset>-<Func>-<Version>`` naming
+                # and live on the ``materialyze`` HF org (resolved from bare names
+                # by ``load_model``), except the CHGNet PyG weights, hosted under
+                # ``BowenD-UCB``. See https://huggingface.co/materialyze.
+                match calculator_name:
+                    case MLFF.M3GNet:
+                        path = kwargs.get("path", "M3GNet-PES-MatPES-PBE-2025.2")
+                    case MLFF.CHGNet:
+                        path = kwargs.get(
+                            "path", "BowenD-UCB/CHGNet-PyG-MatPES-PBE-2025.2.10"
+                        )
+                    case MLFF.MATPES_R2SCAN | MLFF.MATPES_PBE:
+                        # ``calculator_name.value`` is e.g. "MatPES-PBE";
+                        # take the suffix to construct the HF repo name.
+                        functional = calculator_name.value.split("-", 1)[-1]
+                        architecture = kwargs.pop("architecture", "TensorNet")
+                        version = kwargs.pop("version", "2025.2")
+                        path = kwargs.get(
+                            "path",
+                            f"{architecture}-PES-MatPES-{functional}-{version}",
+                        )
 
-        elif calculator_name == MLFF.GAP:
-            from quippy.potential import Potential
+                if default_dtype is not None:
+                    matgl.set_default_dtype(default_dtype)
 
-            calculator = Potential(**kwargs)
+                calculator = PESCalculator(matgl.load_model(path), **kwargs)
 
-        elif calculator_name == MLFF.Nequip:
-            from nequip.ase import NequIPCalculator
+            case MLFF.MACE | MLFF.MACE_MP_0 | MLFF.MACE_MPA_0 | MLFF.MACE_MP_0B3:
+                from mace.calculators import MACECalculator, mace_mp
 
-            calculator = NequIPCalculator.from_deployed_model(**kwargs)
+                model = kwargs.get("model")
+                if isinstance(model, str | Path) and Path(model).exists():
+                    model_path = model
+                    device = kwargs.pop("device", None) or "cpu"
+                    kwargs.pop("device", None)
+                    calculator = MACECalculator(
+                        model_paths=model_path,
+                        device=device,
+                        default_dtype=default_dtype or "",
+                        **kwargs,
+                    )
 
-    elif isinstance(calculator_meta, dict):
-        calc_cls = MontyDecoder().decode(json.dumps(calculator_meta))
+                    if kwargs.get("dispersion", False):
+                        # See https://github.com/materialsproject/atomate2/issues/1262
+                        # Specifying an explicit model path unsets the dispersio
+                        # Reset it here.
+                        import torch
+                        from ase.calculators.mixing import SumCalculator
+                        from torch_dftd.torch_dftd3_calculator import (
+                            TorchDFTD3Calculator,
+                        )
+
+                        default_d3_kwargs = {
+                            "damping": "bj",
+                            "xc": "pbe",
+                            "cutoff": 40.0 * Bohr,
+                            "dtype": default_dtype or torch.get_default_dtype(),
+                        }
+                        kwargs.update(
+                            {
+                                k: v
+                                for k, v in default_d3_kwargs.items()
+                                if k not in kwargs
+                            }
+                        )
+
+                        d3_calc = TorchDFTD3Calculator(device=device, **kwargs)
+                        calculator = SumCalculator([calculator, d3_calc])
+                else:
+                    calculator = mace_mp(default_dtype=default_dtype or "", **kwargs)
+
+            case MLFF.Nequip | MLFF.Allegro:
+                from nequip.integrations.ase import NequIPCalculator
+
+                calculator = getattr(
+                    NequIPCalculator,
+                    (
+                        "from_compiled_model"
+                        if hasattr(NequIPCalculator, "from_compiled_model")
+                        else "from_deployed_model"
+                    ),
+                )(**kwargs)
+
+            case MLFF.FAIRChem:
+                from fairchem.core import FAIRChemCalculator, pretrained_mlip
+
+                predict_unit_kwargs = kwargs.pop(
+                    "predict_unit",
+                    _DEFAULT_CALCULATOR_KWARGS[MLFF.FAIRChem]["predict_unit"],
+                )
+                calculator = FAIRChemCalculator(
+                    pretrained_mlip.get_predict_unit(**predict_unit_kwargs),
+                    **{k: v for k, v in kwargs.items() if k != "predict_unit"},
+                )
+
+    elif isinstance(calculator_meta, dict) or (
+        isinstance(calculator_meta, str) and calculator_meta.count(".") >= 1
+    ):
+        calc_cls = _load_calc_cls(calculator_meta)
         calculator = calc_cls(**kwargs)
+
+    if calculator is None:
+        raise ValueError(f"Could not create ASE calculator for {calculator_meta}.")
 
     return calculator
 
 
+def _load_calc_cls(
+    calculator_meta: str | dict,
+) -> type[Calculator] | Callable[..., Calculator]:
+    """Load an ASE calculator using monty or importlib.
+
+    Parameters
+    ----------
+    calculator_meta : str or dict
+        If a str, should be a dot-separated import string:
+            "chgnet.model.dynamics.CHGNetCalculator"
+        If a dict, should be a monty-style JSONable dict:
+            {"@module": "chgnet.model.dynamics", "@callable": "CHGNetCalculator"}
+
+    Returns
+    -------
+    ase Calculator
+    """
+    if isinstance(calculator_meta, str):
+        module, klass = calculator_meta.rsplit(".", 1)
+        return getattr(import_module(module), klass)
+    return MontyDecoder().process_decoded(calculator_meta)
+
+
 @contextmanager
-def revert_default_dtype() -> Generator[None, None, None]:
+def revert_default_dtype() -> Generator[None]:
     """Context manager for torch.default_dtype.
 
     Reverts it to whatever torch.get_default_dtype() was when entering the context.
@@ -460,3 +501,68 @@ def revert_default_dtype() -> Generator[None, None, None]:
     orig = torch.get_default_dtype()
     yield
     torch.set_default_dtype(orig)
+
+
+def _get_pkg_name(calculator_meta: MLFF | str | dict[str, Any]) -> str | None:
+    """Get the package name for a given force field.
+
+    Parameters
+    ----------
+    calculator_meta : MLFF, import-style str, or JSONable dict
+        The calculator metadata used to load the calculator,
+        or an MLFF enum.
+
+    Returns
+    -------
+    str or None: The package name of the force field if it could be identified,
+        None otherwise.
+    """
+    if isinstance(calculator_meta, MLFF):
+        # map force field name to its package name
+        match calculator_meta:
+            case MLFF.Allegro | MLFF.Nequip:
+                ff_pkg = "nequip"
+            case MLFF.CHGNet:
+                # Check if CHGNet is installed
+                try:
+                    ff_pkg = next(pkg for pkg in ("chgnet", "matgl") if find_spec(pkg))
+                except StopIteration:
+                    ff_pkg = None
+            case MLFF.M3GNet | MLFF.MATPES_PBE | MLFF.MATPES_R2SCAN:
+                ff_pkg = "matgl"
+            case MLFF.DeepMD:
+                ff_pkg = "deepmd-kit"
+            case MLFF.FAIRChem:
+                ff_pkg = "fairchem.core"
+            case MLFF.GAP:
+                ff_pkg = "quippy-ase"
+            case MLFF.MACE | MLFF.MACE_MP_0 | MLFF.MACE_MPA_0 | MLFF.MACE_MP_0B3:
+                ff_pkg = "mace-torch"
+            case MLFF.MatterSim:
+                ff_pkg = "mattersim"
+            case MLFF.NEP:
+                ff_pkg = "calorine"
+            case MLFF.SevenNet:
+                ff_pkg = "sevenn"
+            case MLFF.UPET:
+                ff_pkg = "upet"
+            case _:
+                ff_pkg = None
+        return ff_pkg
+    if isinstance(calculator_meta, str | dict):
+        calc_cls = _load_calc_cls(calculator_meta)
+        return calc_cls.__module__.split(".", 1)[0]
+    assert_never(calculator_meta)
+
+
+def _get_pkg_version(calculator_meta: str | dict[str, Any] | MLFF) -> str | None:
+    """Try to establish the imported version of a forcefield python package."""
+    if isinstance(pkg_name := _get_pkg_name(calculator_meta), str):
+        try:
+            return version(pkg_name)
+        except PackageNotFoundError:
+            try:
+                return getattr(import_module(pkg_name), "__version__", None)
+            except ImportError:
+                pass
+    return None

@@ -4,21 +4,60 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
 from atomate2.common.schemas.elastic import ElasticDocument
 from atomate2.forcefields.flows.elastic import ElasticMaker
-from atomate2.forcefields.jobs import MACERelaxMaker
+from atomate2.forcefields.jobs import ForceFieldRelaxMaker
+
+from ..conftest import mlff_is_installed  # noqa: TID252
 
 
-def test_elastic_wf_with_mace(clean_dir, si_structure, test_dir):
+@pytest.mark.skipif(not mlff_is_installed("MACE"), reason="mace_torch is not installed")
+@pytest.mark.parametrize("convenience_constructor", [True, False])
+@pytest.mark.parametrize("socket", [True, False])
+def test_elastic_wf_with_mace(
+    clean_dir, si_structure, test_dir, convenience_constructor: bool, socket: bool
+):
     si_prim = SpacegroupAnalyzer(si_structure).get_primitive_standard_structure()
     model_path = f"{test_dir}/forcefields/mace/MACE.model"
-    common_kwds = dict(
-        calculator_kwargs={"model": model_path, "default_dtype": "float64"},
-        relax_kwargs={"fmax": 0.00001},
-    )
+    common_kwds = {
+        "force_field_name": "MACE-MP-0",
+        "calculator_kwargs": {"model": model_path, "default_dtype": "float64"},
+        "relax_kwargs": {"fmax": 0.00001},
+    }
 
-    flow = ElasticMaker(
-        bulk_relax_maker=MACERelaxMaker(**common_kwds, relax_cell=True),
-        elastic_relax_maker=MACERelaxMaker(**common_kwds, relax_cell=False),
-    ).make(si_prim)
+    if convenience_constructor:
+        common_kwds.pop("force_field_name")
+
+        # Test legacy kwarg catches for backwards compatibility
+        with pytest.raises(
+            ValueError, match="You have specified both `calculator_kwargs` and"
+        ):
+            ElasticMaker.from_force_field_name(
+                force_field_name="MACE-MP-0",
+                mlff_kwargs=common_kwds,
+                calculator_kwargs=common_kwds,
+                socket=socket,
+            )
+
+        with pytest.warns(
+            UserWarning, match="`mlff_kwargs` has been marked for deprecation."
+        ):
+            maker = ElasticMaker.from_force_field_name(
+                force_field_name="MACE-MP-0",
+                mlff_kwargs=common_kwds,
+                socket=socket,
+            )
+        assert all(
+            v == getattr(maker.bulk_relax_maker, k, None)
+            for k, v in common_kwds.items()
+        )
+
+    else:
+        maker = ElasticMaker(
+            bulk_relax_maker=ForceFieldRelaxMaker(**common_kwds, relax_cell=True),
+            elastic_relax_maker=ForceFieldRelaxMaker(**common_kwds, relax_cell=False),
+            socket=socket,
+        )
+
+    flow = maker.make(si_prim)
 
     # run the flow or job and ensure that it finished running successfully
     responses = run_locally(flow, create_folders=True, ensure_success=True)
@@ -31,3 +70,16 @@ def test_elastic_wf_with_mace(clean_dir, si_structure, test_dir):
         0.002005039, abs=0.01
     )
     assert elastic_output.chemsys == "Si"
+
+
+@pytest.mark.skipif(not mlff_is_installed("MACE"), reason="mace_torch is not installed")
+def test_ext_load_elastic_initialization():
+    calculator_meta = {
+        "@module": "mace.calculators",
+        "@callable": "mace_mp",
+    }
+    maker = ElasticMaker.from_force_field_name(
+        force_field_name=calculator_meta,
+    )
+    assert maker.bulk_relax_maker.ase_calculator_name == "mace_mp"
+    assert maker.elastic_relax_maker.ase_calculator_name == "mace_mp"

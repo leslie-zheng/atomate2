@@ -21,7 +21,7 @@ from custodian.cp2k.handlers import (
 )
 from custodian.cp2k.jobs import Cp2kJob
 from custodian.cp2k.validators import Cp2kOutputValidator
-from jobflow.utils import ValueEnum
+from emmet.core.types.enums import ValueEnum
 
 from atomate2 import SETTINGS
 
@@ -112,7 +112,7 @@ def run_cp2k(
     else:
         raise ValueError(f"Unsupported {job_type=}")
 
-    c = Custodian(
+    custodian = Custodian(
         handlers,
         jobs,
         validators=validators,
@@ -122,7 +122,7 @@ def run_cp2k(
     )
 
     logger.info("Running CP2K using custodian.")
-    c.run()
+    custodian.run()
 
 
 def should_stop_children(

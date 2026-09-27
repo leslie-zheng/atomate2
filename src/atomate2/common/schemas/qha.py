@@ -1,0 +1,268 @@
+"""Schemas for QHA documents."""
+
+import logging
+from typing import Union
+
+import numpy as np
+from emmet.core.math import Matrix3D
+from emmet.core.structure import StructureMetadata
+from phonopy.api_qha import PhonopyQHA
+from pydantic import Field
+from pymatgen.core import Structure
+from typing_extensions import Self
+
+logger = logging.getLogger(__name__)
+
+
+class PhononSummaryData(StructureMetadata):
+    """Save thermodynamic state variables at a series of temperatures."""
+
+    structure: Structure | None = Field(
+        None,
+        description=(
+            "Structure associated with the phonon calculation "
+            "used to generate this data"
+        ),
+    )
+
+    supercell_matrix: Matrix3D | None = Field(
+        None, description="matrix describing the supercell."
+    )
+
+    total_dft_energy: float | None = Field(
+        None, description="The total DFT energy associated with the structure."
+    )
+
+    volume_per_formula_unit: float | None = Field(
+        None, description="volume per formula unit in Angstrom**3."
+    )
+
+    formula_units: int | None = Field(None, description="Formula units per cell.")
+
+    has_imaginary_modes: bool | None = Field(
+        None, description="Whether the phonon spectrum has imaginary modes."
+    )
+
+    temperatures: list[float] | None = Field(None, description="Temperature in K.")
+    free_energies: list[float] | None = Field(
+        None, description="Helmholtz free energies in J/mol."
+    )
+    heat_capacities: list[float] | None = Field(
+        None, description="Heat capacities in J/(K . mol)."
+    )
+    entropies: list[float] | None = Field(None, description="Entropies in J/K.")
+    internal_energies: list[float] | None = Field(
+        None, description="Internal energies in J/mol"
+    )
+
+
+class PhononQHADoc(StructureMetadata, extra="allow"):  # type: ignore[call-arg]
+    """Collection of all data produced by the QHA workflow."""
+
+    structure: Structure | None = Field(
+        None, description="Structure of Materials Project."
+    )
+
+    temperatures: list[float] | None = Field(
+        None,
+        description="temperatures at which the vibrational part of the free energies"
+        " and other properties have been computed",
+    )
+
+    bulk_modulus: float | None = Field(
+        None, description="Bulk modulus in GPa computed without phonon contribution."
+    )
+    thermal_expansion: list[float] | None = Field(
+        None,
+        description="Thermal expansion coefficients at temperatures. "
+        "Shape=(temperatures,).",
+    )
+    helmholtz_volume: list[list[float]] | None = Field(
+        None,
+        description="Free energies (eV) at temperatures and volumes (Angstrom^3)."
+        "shape (temperatures, volumes)",  # TODO: add units here
+    )
+    volume_temperature: list[float] | None = Field(
+        None,
+        description="Volumes in Angstrom^3 at temperatures.Shape: (temperatures,)",
+    )
+    gibbs_temperature: list[float] | None = Field(
+        None,
+        description="Gibbs free energies in eV at temperatures. Shape: (temperatures,)",
+    )
+    bulk_modulus_temperature: list[float] | None = Field(
+        None,
+        description="Bulk modulus in GPa  at temperature.Shape: (temperatures,)",
+    )
+    heat_capacity_p_numerical: list[float] | None = Field(
+        None,
+        description="Heat capacities in J/K/mol at constant pressure at temperatures."
+        "Shape: (temperatures,)",
+    )
+    gruneisen_temperature: list[float] | None = Field(
+        None,
+        description="Gruneisen parameters at temperatures.Shape: (temperatures,)",
+    )
+    pressure: float | None = Field(
+        None, description="Pressure in GPa at which the Gibbs energy was computed."
+    )
+    t_max: float | None = Field(
+        None,
+        description="Maximum temperature in K up to"
+        " which free energy volume curves are evaluated",
+    )
+    volumes: list[float] | None = Field(None, description="Volumes in Angstrom^3.")
+    free_energies: list[list[float]] | None = Field(
+        None,
+        description="List of free energies in J/mol for per formula unit. "
+        "Shape: (temperatures, volumes)",
+    )
+    heat_capacities: list[list[float]] | None = Field(
+        None,
+        description="List of heat capacities in J/K/mol  per formula unit. "
+        "Shape: (temperatures, volumes)",
+    )
+    entropies: list[list[float]] | None = Field(
+        None,
+        description="List of entropies in J/(K*mol) per formula unit. "
+        "Shape: (temperatures, volumes) ",
+    )
+    formula_units: int | None = Field(None, description="Formula units")
+
+    supercell_matrix: Matrix3D | None = Field(None, description="Supercell matrix")
+
+    @classmethod
+    def from_phonon_runs(
+        cls,
+        structure: Structure,
+        volumes: list[float],
+        temperatures: list[float],
+        electronic_energies: list[list[float]],
+        free_energies: list[list[float]],
+        heat_capacities: list[list[float]],
+        entropies: list[list[float]],
+        supercell_matrix: list[list[float]],
+        t_max: float = None,
+        pressure: float = None,
+        formula_units: Union[int, None] = None,
+        eos_type: str = "vinet",
+        **kwargs,
+    ) -> Self:
+        """Generate QHA results.
+
+        Parameters
+        ----------
+        structure: Structure object
+        volumes: list of floats
+        temperatures: list of floats
+        electronic_energies: list of list of floats
+        free_energies: list of list of floats
+        heat_capacities: list of list of floats
+        entropies: list of list of floats
+        supercell_matrix: list of list of floats
+        t_max: float
+        pressure: float
+        eos_type: string
+            determines eos type used for the fit
+        kwargs: dict
+            Additional keywords to pass to this method
+
+        Returns
+        -------
+        .PhononQHADoc
+        """
+        import warnings
+
+        with warnings.catch_warnings():
+            # Phonopy messes with the warnings
+            # Turns all warnings into errors
+
+            qha = PhonopyQHA(
+                volumes=np.array(volumes),
+                electronic_energies=np.array(electronic_energies),
+                temperatures=np.array(temperatures),
+                free_energy=np.array(free_energies),
+                cv=np.array(heat_capacities),
+                entropy=np.array(entropies),
+                t_max=t_max,
+                pressure=pressure,
+                eos=eos_type,
+            )
+
+        # create some plots here
+        # add kwargs to change the names and file types
+        fig_ext = kwargs.get("plot_type", "pdf")
+        qha.plot_helmholtz_volume().savefig(
+            f"{kwargs.get('helmholtz_volume_filename', 'helmholtz_volume')}.{fig_ext}"
+        )
+        qha.plot_volume_temperature().savefig(
+            f"{kwargs.get('volume_temperature_plot', 'volume_temperature')}.{fig_ext}"
+        )
+        qha.plot_thermal_expansion().savefig(
+            f"{kwargs.get('thermal_expansion_plot', 'thermal_expansion')}.{fig_ext}"
+        )
+        qha.plot_gibbs_temperature().savefig(
+            f"{kwargs.get('gibbs_temperature_plot', 'gibbs_temperature')}.{fig_ext}"
+        )
+        qha.plot_bulk_modulus_temperature().savefig(
+            f"{kwargs.get('bulk_modulus_plot', 'bulk_modulus_temperature')}.{fig_ext}"
+        )
+        qha.plot_heat_capacity_P_numerical().savefig(
+            f"{kwargs.get('heat_capacity_plot', 'heat_capacity_P_numerical')}.{fig_ext}"
+        )
+        # qha.plot_heat_capacity_P_polyfit().savefig("heat_capacity_P_polyfit.eps")
+        ge_temp_plot = kwargs.get("gruneisen_temperature_plot", "gruneisen_temperature")
+        qha.plot_gruneisen_temperature().savefig(f"{ge_temp_plot}.{fig_ext}")
+
+        qha.write_helmholtz_volume(
+            filename=kwargs.get("helmholtz_volume_datafile", "helmholtz_volume.dat")
+        )
+        qha.write_helmholtz_volume_fitted(
+            filename=kwargs.get(
+                "helmholtz_volume_fitted_datafile", "helmholtz_volume_fitted.dat"
+            ),
+            thin_number=kwargs.get("thin_number", 10),
+        )
+        qha.write_volume_temperature(
+            filename=kwargs.get("volume_temperature_datafile", "volume_temperature.dat")
+        )
+        qha.write_thermal_expansion(
+            filename=kwargs.get("thermal_expansion_datafile", "thermal_expansion.dat")
+        )
+        qha.write_gibbs_temperature(
+            filename=kwargs.get("gibbs_temperature_datafile", "gibbs_temperature.dat")
+        )
+        ge_temp_file = kwargs.get(
+            "gruneisen_temperature_datafile", "gruneisen_temperature.dat"
+        )
+        qha.write_gruneisen_temperature(filename=ge_temp_file)
+        qha.write_heat_capacity_P_numerical(
+            filename=kwargs.get(
+                "heat_capacity_datafile", "heat_capacity_P_numerical.dat"
+            )
+        )
+
+        # write files as well - might be easier for plotting
+
+        return cls.from_structure(
+            structure=structure,
+            meta_structure=structure,
+            bulk_modulus=qha.bulk_modulus[0],  # all bulk moduli are the same
+            # (if electronic effects are not treated)
+            thermal_expansion=qha.thermal_expansion,
+            helmholtz_volume=qha.helmholtz_volume,
+            volume_temperature=qha.volume_temperature,
+            gibbs_temperature=qha.gibbs_temperature,
+            bulk_modulus_temperature=qha.bulk_modulus_temperature,
+            heat_capacity_p_numerical=qha.heat_capacity_P_numerical,
+            gruneisen_temperature=qha.gruneisen_temperature,
+            pressure=pressure,
+            t_max=t_max,
+            temperatures=temperatures,
+            volumes=volumes,
+            free_energies=np.array(np.array(free_energies) * 1000.0).tolist(),
+            heat_capacities=heat_capacities,
+            entropies=entropies,
+            formula_units=formula_units,
+            supercell_matrix=supercell_matrix,
+        )

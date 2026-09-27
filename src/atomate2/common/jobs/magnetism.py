@@ -79,7 +79,6 @@ def enumerate_magnetic_orderings(
         truncate_by_symmetry=truncate_by_symmetry,
         transformation_kwargs=transformation_kwargs,
     )
-
     return enumerator.ordered_structures, enumerator.ordered_structure_origins
 
 
@@ -111,7 +110,7 @@ def run_ordering_calculations(
     """
     jobs = []
     num_orderings = len(orderings[0])
-    for idx, (struct, origin) in enumerate(zip(*orderings)):
+    for idx, (struct, origin) in enumerate(zip(*orderings, strict=True)):
         name = f"{idx + 1}/{num_orderings} ({origin})"
 
         parent_structure = struct.copy()
@@ -129,6 +128,8 @@ def run_ordering_calculations(
             structure = relax_job.output.structure
             parent_uuid = relax_job.output.uuid
             static_job_kwargs["prev_dir"] = relax_job.output.dir_name
+        else:
+            structure = struct
 
         static_job = static_maker.make(structure, **static_job_kwargs)
         static_job.append_name(" " + name)

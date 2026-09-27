@@ -6,12 +6,14 @@ import json
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import numpy as np
 from emmet.core.math import Matrix3D, Vector3D
 from emmet.core.structure import MoleculeMetadata, StructureMetadata
+from emmet.core.task import BaseTaskDocument
 from emmet.core.tasks import get_uri
+from emmet.core.vasp.calc_types.enums import TaskType
 from pydantic import BaseModel, Field
 from pymatgen.core import Molecule, Structure
 from pymatgen.entries.computed_entries import ComputedEntry
@@ -39,12 +41,12 @@ class AnalysisDoc(BaseModel):
         Errors from the FHI-aims output
     """
 
-    delta_volume: Optional[float] = Field(None, description="Absolute change in volume")
-    delta_volume_as_percent: Optional[float] = Field(
+    delta_volume: float | None = Field(None, description="Absolute change in volume")
+    delta_volume_as_percent: float | None = Field(
         None, description="Percentage change in volume"
     )
-    max_force: Optional[float] = Field(None, description="Maximum force on the atoms")
-    errors: Optional[list[str]] = Field(
+    max_force: float | None = Field(None, description="Maximum force on the atoms")
+    errors: list[str] | None = Field(
         None, description="Errors from the FHI-aims output"
     )
 
@@ -78,56 +80,6 @@ class AnalysisDoc(BaseModel):
         )
 
 
-class Species(BaseModel):
-    """A representation of the most important information about each type of species.
-
-    Parameters
-    ----------
-    element: str
-        Element assigned to this atom kind
-    species_defaults: str
-        Basis set for this atom kind
-    """
-
-    element: str = Field(None, description="Element assigned to this atom kind")
-    species_defaults: str = Field(None, description="Basis set for this atom kind")
-
-
-class SpeciesSummary(BaseModel):
-    """A summary of species defaults.
-
-    Parameters
-    ----------
-    species_defaults: Dict[str, .Species]
-        Dictionary mapping atomic kind labels to their info
-    """
-
-    species_defaults: dict[str, Species] = Field(
-        None, description="Dictionary mapping atomic kind labels to their info"
-    )
-
-    @classmethod
-    def from_species_info(cls, species_info: dict[str, dict[str, Any]]) -> Self:
-        """Initialize from the atomic_kind_info dictionary.
-
-        Parameters
-        ----------
-        species_info: Dict[str, Dict[str, Any]]
-            The information for the basis set for the calculation
-
-        Returns
-        -------
-        The SpeciesSummary
-        """
-        dct: dict[str, dict[str, Any]] = {"species_defaults": {}}
-        for kind, info in species_info.items():
-            dct["species_defaults"][kind] = {
-                "element": info["element"],
-                "species_defaults": info["species_defaults"],
-            }
-        return cls(**dct)
-
-
 class InputDoc(BaseModel):
     """Summary of inputs for an FHI-aims calculation.
 
@@ -137,18 +89,23 @@ class InputDoc(BaseModel):
         The input pymatgen Structure or Molecule of the system
     species_info: .SpeciesSummary
         Summary of the species defaults used for each atom kind
+    parameters: dict[str, Any]
+        The parameters passed in the control.in file
     xc: str
         Exchange-correlation functional used if not the default
     """
 
-    structure: Union[Structure, Molecule] = Field(
+    structure: Structure | Molecule = Field(
         None, description="The input structure object"
     )
-    species_info: SpeciesSummary = Field(
-        None, description="Summary of the species defaults used for each atom kind"
+    parameters: dict[str, Any] = Field(
+        {}, description="The input parameters for FHI-aims"
     )
     xc: str = Field(
         None, description="Exchange-correlation functional used if not the default"
+    )
+    magnetic_moments: list[float] | None = Field(
+        None, description="Magnetic moments for each atom"
     )
 
     @classmethod
@@ -165,12 +122,16 @@ class InputDoc(BaseModel):
         .InputDoc
             A summary of the input structure and parameters.
         """
-        summary = SpeciesSummary.from_species_info(calc_doc.input.species_info)
+        structure = calc_doc.input.structure
+        magnetic_moments = None
+        if "magmom" in structure.site_properties:
+            magnetic_moments = structure.site_properties["magmom"]
 
         return cls(
-            structure=calc_doc.input.structure,
-            atomic_kind_info=summary,
-            xc=str(calc_doc.run_type),
+            structure=structure,
+            parameters=calc_doc.input.parameters,
+            xc=calc_doc.input.parameters["xc"],
+            magnetic_moments=magnetic_moments,
         )
 
 
@@ -201,10 +162,10 @@ class OutputDoc(BaseModel):
         Forces on atoms from all calculations.
     """
 
-    structure: Union[Structure, Molecule] = Field(
+    structure: Structure | Molecule = Field(
         None, description="The output structure object"
     )
-    trajectory: Sequence[Union[Structure, Molecule]] = Field(
+    trajectory: Sequence[Structure | Molecule] = Field(
         None, description="The trajectory of output structures"
     )
     energy: float = Field(
@@ -213,18 +174,18 @@ class OutputDoc(BaseModel):
     energy_per_atom: float = Field(
         None, description="The final DFT energy per atom for the last calculation"
     )
-    bandgap: Optional[float] = Field(
+    bandgap: float | None = Field(
         None, description="The DFT bandgap for the last calculation"
     )
-    cbm: Optional[float] = Field(None, description="CBM for this calculation")
-    vbm: Optional[float] = Field(None, description="VBM for this calculation")
-    forces: Optional[list[Vector3D]] = Field(
+    cbm: float | None = Field(None, description="CBM for this calculation")
+    vbm: float | None = Field(None, description="VBM for this calculation")
+    forces: list[Vector3D] | None = Field(
         None, description="Forces on atoms from the last calculation"
     )
-    stress: Optional[Matrix3D] = Field(
+    stress: Matrix3D | None = Field(
         None, description="Stress on the unit cell from the last calculation"
     )
-    all_forces: Optional[list[list[Vector3D]]] = Field(
+    all_forces: list[list[Vector3D]] | None = Field(
         None, description="Forces on atoms from all calculations."
     )
 
@@ -279,7 +240,7 @@ class ConvergenceSummary(BaseModel):
         The actual difference in the convergence criteria values
     """
 
-    structure: Union[Structure, Molecule] = Field(
+    structure: Structure | Molecule = Field(
         None, description="The pymatgen object of the output structure"
     )
     converged: bool = Field(None, description="Is convergence achieved?")
@@ -297,7 +258,7 @@ class ConvergenceSummary(BaseModel):
         None,
         description="The last value of the input setting to study convergence against",
     )
-    asked_epsilon: Optional[float] = Field(
+    asked_epsilon: float | None = Field(
         None,
         description="The difference in the values for the convergence criteria that was"
         " asked for",
@@ -383,15 +344,19 @@ class ConvergenceSummary(BaseModel):
         )
 
 
-class AimsTaskDoc(StructureMetadata, MoleculeMetadata):
+class AimsTaskDoc(BaseTaskDocument, StructureMetadata, MoleculeMetadata):
     """Definition of FHI-aims task document.
 
     Parameters
     ----------
+    calc_code: str
+        The calculation code used to compute the task
     dir_name: str
         The directory for this FHI-aims task
     last_updated: str
         Timestamp for this task document was last updated
+    completed: bool
+        Whether this calculation completed
     completed_at: str
         Timestamp for when this task was completed
     input: .InputDoc
@@ -430,48 +395,50 @@ class AimsTaskDoc(StructureMetadata, MoleculeMetadata):
         Additional json loaded from the calculation directory
     """
 
+    calc_code: str = "aims"
     dir_name: str = Field(None, description="The directory for this FHI-aims task")
     last_updated: str = Field(
         default_factory=datetime_str,
         description="Timestamp for this task document was last updated",
     )
+    completed: bool = Field(None, description="Whether this calculation completed")
     completed_at: str = Field(
         None, description="Timestamp for when this task was completed"
     )
-    input: Optional[InputDoc] = Field(
+    input: InputDoc | None = Field(
         None, description="The input to the first calculation"
     )
     output: OutputDoc = Field(None, description="The output of the final calculation")
-    structure: Union[Structure, Molecule] = Field(
+    structure: Structure | Molecule = Field(
         None, description="Final output atoms from the task"
     )
     state: TaskState = Field(None, description="State of this task")
-    included_objects: Optional[list[AimsObject]] = Field(
+    included_objects: list[AimsObject] | None = Field(
         None, description="List of FHI-aims objects included with this task document"
     )
-    aims_objects: Optional[dict[AimsObject, Any]] = Field(
+    aims_objects: dict[AimsObject, Any] | None = Field(
         None, description="FHI-aims objects associated with this task"
     )
-    entry: Optional[ComputedEntry] = Field(
+    entry: ComputedEntry | None = Field(
         None, description="The ComputedEntry from the task doc"
     )
     analysis: AnalysisDoc = Field(
         None, description="Summary of structural relaxation and forces"
     )
     task_label: str = Field(None, description="A description of the task")
-    tags: Optional[list[str]] = Field(
+    tags: list[str] | None = Field(
         None, description="Metadata tags for this task document"
     )
-    author: Optional[str] = Field(
+    author: str | None = Field(
         None, description="Author extracted from transformations"
     )
-    icsd_id: Optional[str] = Field(
+    icsd_id: str | None = Field(
         None, description="International crystal structure database id of the structure"
     )
-    calcs_reversed: Optional[list[Calculation]] = Field(
+    calcs_reversed: list[Calculation] | None = Field(
         None, description="The inputs and outputs for all FHI-aims runs in this task."
     )
-    transformations: Optional[dict[str, Any]] = Field(
+    transformations: dict[str, Any] | None = Field(
         None,
         description="Information on the structural transformations, parsed from a "
         "transformations.json file",
@@ -481,7 +448,7 @@ class AimsTaskDoc(StructureMetadata, MoleculeMetadata):
         description="Information on the custodian settings used to run this "
         "calculation, parsed from a custodian.json file",
     )
-    additional_json: Optional[dict[str, Any]] = Field(
+    additional_json: dict[str, Any] | None = Field(
         None, description="Additional json loaded from the calculation directory"
     )
 
@@ -553,7 +520,9 @@ class AimsTaskDoc(StructureMetadata, MoleculeMetadata):
             "calcs_reversed": calcs_reversed,
             "analysis": analysis,
             "tags": tags,
+            "completed": calcs_reversed[-1].completed,
             "completed_at": calcs_reversed[-1].completed_at,
+            "input": InputDoc.from_aims_calc_doc(calcs_reversed[-1]),
             "output": OutputDoc.from_aims_calc_doc(calcs_reversed[-1]),
             "state": _get_state(calcs_reversed, analysis),
             "entry": cls.get_entry(calcs_reversed),
@@ -565,7 +534,7 @@ class AimsTaskDoc(StructureMetadata, MoleculeMetadata):
 
     @staticmethod
     def get_entry(
-        calc_docs: list[Calculation], job_id: Optional[str] = None
+        calc_docs: list[Calculation], job_id: str | None = None
     ) -> ComputedEntry:
         """Get a computed entry from a list of FHI-aims calculation documents.
 
@@ -596,6 +565,17 @@ class AimsTaskDoc(StructureMetadata, MoleculeMetadata):
             },
         }
         return ComputedEntry.from_dict(entry_dict)
+
+    # TARP: This is done because the mangnetism schema assume that VASP
+    #       TaskTypes are used. I think this should be changed, but that
+    #       would require modifications in emmet
+    @property
+    def task_type(self) -> TaskType:
+        """Get the task type of the calculation."""
+        if "Relaxation calculation" in self.task_label:
+            return TaskType("Structure Optimization")
+
+        return TaskType("Static")
 
 
 def _find_aims_files(
@@ -672,7 +652,7 @@ def _find_aims_files(
     return task_files
 
 
-def _get_max_force(calc_doc: Calculation) -> Optional[float]:
+def _get_max_force(calc_doc: Calculation) -> float | None:
     """Get max force acting on atoms from a calculation document.
 
     Parameters

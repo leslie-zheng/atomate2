@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from custodian import Custodian
 from custodian.qchem.handlers import QChemErrorHandler
 from custodian.qchem.jobs import QCJob
-from jobflow.utils import ValueEnum
+from emmet.core.types.enums import ValueEnum
 
 from atomate2 import SETTINGS
 
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from emmet.core.qc_tasks import TaskDoc
 
 
-_DEFAULT_HANDLERS = (QChemErrorHandler,)
+_DEFAULT_HANDLERS = (QChemErrorHandler(),)
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,6 @@ def run_qchem(
         scratch_dir=scratch_dir,
         **custodian_kwargs,
     )
-
     logger.info("Running QChem using custodian.")
     c.run()
 

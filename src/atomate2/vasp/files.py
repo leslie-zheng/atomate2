@@ -64,7 +64,6 @@ def copy_vasp_outputs(
         A file client to use for performing file operations.
     """
     src_dir = strip_hostname(src_dir)  # TODO: Handle hostnames properly.
-
     logger.info(f"Copying VASP inputs from {src_dir}")
 
     relax_ext = get_largest_relax_extension(src_dir, src_host, file_client=file_client)
@@ -196,9 +195,9 @@ def write_vasp_input_set(
 
     if clean_prev:
         # remove previous inputs (prevents old KPOINTS file from overriding KSPACING)
-        for filename in ("POSCAR", "KPOINTS", "POTCAR", "INCAR"):
+        for filename in ("POSCAR", "KPOINTS", "POTCAR", "POTCAR.spec", "INCAR"):
             if Path(filename).exists():
                 Path(filename).unlink()
 
     logger.info("Writing VASP input set.")
-    vis.write_input(directory, potcar_spec=potcar_spec, **kwargs)
+    vis.write_input(directory, **kwargs)

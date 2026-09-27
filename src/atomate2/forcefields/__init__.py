@@ -1,14 +1,6 @@
 """Tools and functions common to all forcefields."""
 
-from enum import Enum
+# ensure that this is still importable for legacy jobs
+from atomate2.forcefields.utils import MLFF, _get_formatted_ff_name
 
-
-class MLFF(Enum):  # TODO inherit from StrEnum when 3.11+
-    """Names of ML force fields."""
-
-    MACE = "MACE"
-    GAP = "GAP"
-    M3GNet = "M3GNet"
-    CHGNet = "CHGNet"
-    Forcefield = "Forcefield"  # default placeholder option
-    Nequip = "Nequip"
+__all__ = ["MLFF"]

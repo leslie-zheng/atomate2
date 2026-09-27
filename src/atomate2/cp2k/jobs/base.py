@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from jobflow import Maker, Response, job
 from monty.serialization import dumpfn
@@ -17,6 +17,7 @@ from pymatgen.electronic_structure.bandstructure import (
 )
 from pymatgen.electronic_structure.dos import DOS, CompleteDos, Dos
 from pymatgen.io.common import VolumetricData
+from pymatgen.util.due import Doi, due
 
 from atomate2 import SETTINGS
 from atomate2.common.files import gzip_files, gzip_output_folder
@@ -31,6 +32,8 @@ from atomate2.cp2k.schemas.task import TaskDocument
 from atomate2.cp2k.sets.base import Cp2kInputGenerator
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pymatgen.core import Structure
 
 
@@ -83,6 +86,13 @@ def cp2k_job(method: Callable) -> job:
     return job(method, data=_DATA_OBJECTS, output_schema=TaskDocument)
 
 
+@due.dcite(
+    Doi("10.1063/5.0007045"),
+    description=(
+        "CP2K review - ensure you cite all references "
+        'in the "R E F E R E N C E S" section of the CP2K output'
+    ),
+)
 @dataclass
 class BaseCp2kMaker(Maker):
     """
@@ -92,7 +102,7 @@ class BaseCp2kMaker(Maker):
     ----------
     name : str
         The job name.
-    input_set_generator : .VaspInputGenerator
+    input_set_generator : .Cp2kInputGenerator
         A generator used to make the input set.
     write_input_set_kwargs : dict
         Keyword arguments that will get passed to :obj:`.write_cp2k_input_set`.

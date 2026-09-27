@@ -1,165 +1,90 @@
-import os
+"""Test machine learning forcefield utility functions."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import numpy as np
 import pytest
-from ase.build import bulk
-from ase.calculators.lj import LennardJones
-from ase.optimize import BFGS
-from ase.spacegroup.symmetrize import check_symmetry
-from numpy.testing import assert_allclose
-from pymatgen.core import Structure
 
 from atomate2.forcefields import MLFF
-from atomate2.forcefields.utils import (
-    FrechetCellFilter,
-    Relaxer,
-    TrajectoryObserver,
-    ase_calculator,
-)
+from atomate2.forcefields.utils import ase_calculator, revert_default_dtype
+
+from .conftest import mlff_is_installed
+
+if TYPE_CHECKING:
+    from pymatgen.core import Structure
 
 
-def test_safe_import():
-    assert FrechetCellFilter is None or FrechetCellFilter.__module__ == "ase.filters"
-
-
-def test_trajectory_observer(si_structure: Structure, test_dir, tmp_dir):
-    atoms = si_structure.to_ase_atoms()
-    atoms.set_calculator(LennardJones())
-
-    traj = TrajectoryObserver(atoms)
-
-    expected_energy = -0.06830751105
-    assert traj.compute_energy() == pytest.approx(expected_energy)
-
-    traj()
-    # NB: always 3 Cartesian components to each interatomic force,
-    # and only 6 unique elements of the flattened stress tensor
-    assert traj.energies[0] == pytest.approx(expected_energy)
-
-    expected_forces = [
-        [8.32667268e-17, 4.16333634e-17, 7.31069641e-17],
-        [-8.32667268e-17, -4.16333634e-17, -7.31069641e-17],
-    ]
-    assert_allclose(traj.forces[0], expected_forces, atol=1e-8)
-    expected_stresses = [
-        4.38808e-03,
-        4.38808e-03,
-        4.38808e-03,
-        -9.47784e-19,
-        -1.24675e-18,
-        -1.76448e-18,
-    ]
-    assert_allclose(traj.stresses[0], expected_stresses, atol=1e-8)
-
-    save_file_name = "log_file.traj"
-    traj.save(save_file_name)
-    assert os.path.isfile(save_file_name)
+@pytest.mark.parametrize("mlff", MLFF)
+def test_mlff(mlff: MLFF):
+    assert mlff == MLFF(str(mlff)) == MLFF(str(mlff).split(".")[-1])
 
 
 @pytest.mark.parametrize(
-    ("optimizer", "traj_file"),
-    [("BFGS", None), (None, None), (BFGS, "log_file.traj")],
+    "mlff", [mlff for mlff in ["MACE", MLFF.SevenNet] if mlff_is_installed(mlff)]
 )
-def test_relaxer(si_structure, test_dir, tmp_dir, optimizer, traj_file):
-    if FrechetCellFilter:
-        expected_lattice = {
-            "a": 3.866974,
-            "b": 3.866974,
-            "c": 3.866974,
-            "volume": 40.888292,
-        }
-        expected_forces = [
-            [8.32667268e-17, 4.16333634e-17, 7.31069641e-17],
-            [-8.32667268e-17, -4.16333634e-17, -7.31069641e-17],
-        ]
-        expected_energy = -0.0683075110
-        expected_stresses = [
-            4.38808588e-03,
-            4.38808588e-03,
-            4.38808588e-03,
-            -9.74728670e-19,
-            -1.31340626e-18,
-            -1.60482883e-18,
-        ]
-    else:
-        expected_lattice = {
-            "a": 1.77102507,
-            "b": 1.77102507,
-            "c": 1.77102507,
-            "volume": 3.927888,
-        }
-        expected_forces = [
-            [-5.95083358e-12, -1.65202964e-12, 2.84683735e-13],
-            [5.92662724e-12, 1.65667133e-12, -2.77979812e-13],
-        ]
-        expected_energy = -5.846762493
-        expected_stresses = [
-            -1.27190530e-03,
-            -1.27190530e-03,
-            -1.27190530e-03,
-            -2.31413557e-14,
-            -3.26060788e-14,
-            5.09222979e-13,
-        ]
-
-    if optimizer is None:
-        with pytest.raises(ValueError, match="Optimizer cannot be None"):
-            Relaxer(calculator=LennardJones(), optimizer=optimizer)
-        return
-
-    relaxer = Relaxer(calculator=LennardJones(), optimizer=optimizer)
-
-    try:
-        relax_output = relaxer.relax(atoms=si_structure, traj_file=traj_file)
-    except TypeError:
-        return
-
-    assert {
-        key: getattr(relax_output["final_structure"].lattice, key)
-        for key in expected_lattice
-    } == pytest.approx(expected_lattice)
-
-    assert relax_output["trajectory"].frame_properties[-1]["energy"] == pytest.approx(
-        expected_energy
-    )
-
-    assert_allclose(
-        relax_output["trajectory"].frame_properties[-1]["forces"], expected_forces
-    )
-
-    assert_allclose(
-        relax_output["trajectory"].frame_properties[-1]["stress"], expected_stresses
-    )
-
-    if traj_file:
-        assert os.path.isfile(traj_file)
-
-
-@pytest.mark.parametrize(("force_field"), ["CHGNet", "MACE"])
-def test_ext_load(force_field: str):
+def test_ext_load(mlff: str | MLFF, test_dir, si_structure: Structure):
     decode_dict = {
-        "CHGNet": {"@module": "chgnet.model.dynamics", "@callable": "CHGNetCalculator"},
         "MACE": {"@module": "mace.calculators", "@callable": "mace_mp"},
-    }[force_field]
+        MLFF.SevenNet: {
+            "@module": "sevenn.sevennet_calculator",
+            "@callable": "SevenNetCalculator",
+        },
+    }[mlff]
+    formatted_mlff = MLFF(mlff)
     calc_from_decode = ase_calculator(decode_dict)
-    calc_from_preset = ase_calculator(str(MLFF(force_field)))
-    assert type(calc_from_decode) == type(calc_from_preset)
-    assert calc_from_decode.name == calc_from_preset.name
-    assert calc_from_decode.parameters == calc_from_preset.parameters == {}
+    calc_from_preset = ase_calculator(str(formatted_mlff))
+    calc_from_enum = ase_calculator(formatted_mlff)
+
+    for other in (calc_from_preset, calc_from_enum):
+        assert type(calc_from_decode) is type(other)
+        assert calc_from_decode.name == other.name
+        assert calc_from_decode.parameters == other.parameters == {}
+
+    atoms = si_structure.to_ase_atoms()
+
+    atoms.calc = calc_from_preset
+    energy = atoms.get_potential_energy()
+    forces = atoms.get_forces()
+
+    assert isinstance(energy, float | np.floating)
+    assert energy < 0
+    assert forces.shape == (2, 3)
+    assert abs(forces.sum()) < 1e-6, f"unexpectedly large net {forces=}"
 
 
-@pytest.mark.parametrize(("fix_symmetry"), [True, False])
-def test_fix_symmetry(fix_symmetry):
-    # adapted from the example at https://wiki.fysik.dtu.dk/ase/ase/constraints.html#the-fixsymmetry-class
-    relaxer = Relaxer(
-        calculator=LennardJones(), relax_cell=True, fix_symmetry=fix_symmetry
-    )
-    atoms_al = bulk("Al", "bcc", a=2 / 3**0.5, cubic=True)
-    atoms_al = atoms_al * (2, 2, 2)
-    atoms_al.positions[0, 0] += 1e-7
-    symmetry_init = check_symmetry(atoms_al, 1e-6)
-    final_struct: Structure = relaxer.relax(atoms=atoms_al, steps=1)["final_structure"]
-    symmetry_final = check_symmetry(final_struct.to_ase_atoms(), 1e-6)
-    if fix_symmetry:
-        assert symmetry_init["number"] == symmetry_final["number"] == 229
-    else:
-        assert symmetry_init["number"] != symmetry_final["number"] == 99
+def test_raises_error():
+    with pytest.raises(ValueError, match="Could not create"):
+        ase_calculator("not_a_calculator")
+
+
+@pytest.mark.skipif(not mlff_is_installed("MACE"), reason="mace_torch is not installed")
+def test_mace_explicit_dispersion(ba_ti_o3_structure: Structure):
+    from ase.calculators.mixing import SumCalculator
+    from mace.calculators.foundations_models import download_mace_mp_checkpoint
+
+    energies = {"mace": -39.969810485839844, "d3": -1.3136245271781846}
+
+    model_path = download_mace_mp_checkpoint("medium-mpa-0")
+
+    atoms = ba_ti_o3_structure.to_ase_atoms()
+
+    with revert_default_dtype():
+        calc_no_path = ase_calculator(MLFF.MACE_MPA_0, dispersion=True)
+        assert isinstance(calc_no_path, SumCalculator)
+        assert calc_no_path.get_potential_energy(atoms=atoms) == pytest.approx(
+            sum(energies.values())
+        )
+
+        calc_path = ase_calculator(MLFF.MACE_MPA_0, model=model_path)
+        assert not isinstance(calc_path, SumCalculator)
+        assert calc_path.get_potential_energy(atoms=atoms) == pytest.approx(
+            energies["mace"]
+        )
+
+        calc_path = ase_calculator(MLFF.MACE_MPA_0, model=model_path, dispersion=True)
+        assert isinstance(calc_no_path, SumCalculator)
+        assert calc_path.get_potential_energy(atoms=atoms) == pytest.approx(
+            sum(energies.values())
+        )

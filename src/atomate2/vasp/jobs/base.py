@@ -6,18 +6,21 @@ import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from shutil import which
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
+from emmet.core.neb import NebIntermediateImagesDoc
 from emmet.core.tasks import TaskDoc
+from emmet.core.types.enums import VaspObject
 from jobflow import Maker, Response, job
 from monty.serialization import dumpfn
-from pymatgen.core.trajectory import Trajectory
+from pymatgen.core.trajectory import Trajectory as PmgTrajectory
 from pymatgen.electronic_structure.bandstructure import (
     BandStructure,
     BandStructureSymmLine,
 )
 from pymatgen.electronic_structure.dos import DOS, CompleteDos, Dos
 from pymatgen.io.vasp import Chgcar, Locpot, Wavecar
+from pymatgen.util.due import Doi, due
 
 from atomate2 import SETTINGS
 from atomate2.common.files import gzip_output_folder
@@ -26,6 +29,8 @@ from atomate2.vasp.run import run_vasp, should_stop_children
 from atomate2.vasp.sets.base import VaspInputGenerator
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pymatgen.core import Structure
 
 
@@ -37,19 +42,30 @@ _CHARGEMOL_EXE_EXISTS = bool(
 )
 
 _DATA_OBJECTS = [
-    BandStructure,
-    BandStructureSymmLine,
-    DOS,
-    Dos,
-    CompleteDos,
-    Locpot,
-    Chgcar,
     Wavecar,
-    Trajectory,
     "force_constants",
     "normalmode_eigenvecs",
     "bandstructure",  # FIX: BandStructure is not currently MSONable
 ]
+
+if SETTINGS.VASP_USE_EMMET_MODELS:
+    # Because the emmet-core models deserialize to JSON
+    # on model_dump, we just pass field names here, not object types
+    _DATA_OBJECTS.extend([f.value for f in VaspObject])
+else:
+    # Store pymatgen objects
+    _DATA_OBJECTS.extend(
+        [
+            BandStructure,
+            BandStructureSymmLine,
+            DOS,
+            Dos,
+            CompleteDos,
+            Locpot,
+            Chgcar,
+            PmgTrajectory,
+        ]
+    )
 
 # Input files. Partially from https://www.vasp.at/wiki/index.php/Category:Input_files
 # Exclude those that are also outputs
@@ -150,10 +166,36 @@ def vasp_job(method: Callable) -> job:
     return job(method, data=_DATA_OBJECTS, output_schema=TaskDoc)
 
 
+@due.dcite(Doi("10.1103/PhysRevB.47.558"), description="VASP: MD for metals")
+@due.dcite(Doi("10.1103/PhysRevB.49.14251"), description="VASP: MD")
+@due.dcite(Doi("10.1016/0927-0256(96)00008-0"), description="VASP: core algorithms")
+@due.dcite(Doi("10.1103/PhysRevB.54.11169"), description="VASP: self-consistency")
 @dataclass
 class BaseVaspMaker(Maker):
     """
     Base VASP job maker.
+
+    To modify settings relevant to `custodian`, use `run_vasp_kwargs`:
+    ```
+    run_vasp_kwargs = {
+        "custodian_kwargs": {
+            "max_errors_per_job": 5,
+            "gzipped_output": True,
+        }
+    }
+    ```
+    For other possible VASP run configurations, see `atomate2.vasp.run.run_vasp`.
+    For example, you can change which executable is used by setting
+    ```
+    run_vasp_kwargs["vasp_cmd"] = "/path/to/some/vasp/executable"
+    ```
+    or override the default choice of custodian handlers using the `"handlers"` kwarg:
+    ```
+    run_vasp_kwargs["handlers"] = [PositiveEnergyHandler]
+    ```
+
+    NB: You cannot set the following four fields using `custodian_kwargs`:
+    `handlers`, `jobs`, `validators`, `max_errors`, and `scratch_dir`.
 
     Parameters
     ----------
@@ -246,9 +288,16 @@ class BaseVaspMaker(Maker):
         )
 
 
-def get_vasp_task_document(path: Path | str, **kwargs) -> TaskDoc:
+def get_vasp_task_document(
+    path: Path | str, is_neb: bool = False, **kwargs
+) -> TaskDoc | NebIntermediateImagesDoc:
     """Get VASP Task Document using atomate2 settings."""
     kwargs.setdefault("store_additional_json", SETTINGS.VASP_STORE_ADDITIONAL_JSON)
+
+    kwargs.setdefault("store_volumetric_data", SETTINGS.VASP_STORE_VOLUMETRIC_DATA)
+
+    if is_neb:
+        return NebIntermediateImagesDoc.from_directory(path, **kwargs)
 
     kwargs.setdefault(
         "volume_change_warning_tol", SETTINGS.VASP_VOLUME_CHANGE_WARNING_TOL
@@ -286,6 +335,7 @@ def get_vasp_task_document(path: Path | str, **kwargs) -> TaskDoc:
                 stacklevel=1,
             )
 
-    kwargs.setdefault("store_volumetric_data", SETTINGS.VASP_STORE_VOLUMETRIC_DATA)
-
+    kwargs["use_emmet_models"] = kwargs.get(
+        "use_emmet_models", SETTINGS.VASP_USE_EMMET_MODELS
+    )
     return TaskDoc.from_directory(path, **kwargs)

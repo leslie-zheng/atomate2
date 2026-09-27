@@ -1,0 +1,481 @@
+"""Tests for TorchSim core makers."""
+# ruff: noqa: E402
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+ts = pytest.importorskip("torch_sim")
+
+import torch
+from ase.build import bulk
+from jobflow import run_locally
+from pymatgen.core import Structure
+from pymatgen.io.ase import AseAtomsAdaptor
+from torch_sim.models.dispersion import D3Parameters
+
+from atomate2.torchsim.core import (
+    TorchSimIntegrateMaker,
+    TorchSimOptimizeMaker,
+    TorchSimStaticMaker,
+    pick_model,
+)
+from atomate2.torchsim.schema import ConvergenceFn, TorchSimModelType
+
+from .conftest import (
+    _SKIP_FAIRCHEM,
+    _SKIP_MACE,
+    _SKIP_MATTERSIM,
+    _SKIP_METATOMIC,
+    _SKIP_NEQUIP,
+    _SKIP_NVALCHEMIOPS,
+    _SKIP_ORB,
+    _SKIP_SEVENNET,
+)
+
+try:
+    from huggingface_hub.utils._auth import get_token
+
+    HAS_HF = True
+except ImportError:
+    HAS_HF = False
+
+
+@pytest.fixture
+def ar_structure() -> Structure:
+    """Create a face-centered cubic (FCC) Argon structure."""
+    atoms = bulk("Ar", "fcc", a=5.26, cubic=True)
+    return AseAtomsAdaptor.get_structure(atoms)
+
+
+@pytest.fixture
+def fe_structure() -> Structure:
+    """Create crystalline iron using ASE."""
+    atoms = bulk("Fe", "fcc", a=5.26, cubic=True)
+    return AseAtomsAdaptor.get_structure(atoms)
+
+
+def test_relax_job_comprehensive(ar_structure: Structure, tmp_path) -> None:
+    """Test TSOptimizeMaker with all kwargs.
+
+    Includes trajectory reporter and autobatcher.
+    """
+    # Perturb the structure to make optimization meaningful
+    perturbed_structure = ar_structure.copy()
+    perturbed_structure.translate_sites(
+        list(range(len(perturbed_structure))), [0.01, 0.01, 0.01]
+    )
+    perturbed_structure.properties["my_prop"] = 1.5
+    perturbed_structure.add_site_property(
+        "my_site_prop", list(range(len(perturbed_structure)))
+    )
+
+    n_systems = 2
+    trajectory_reporter_dict = {
+        "filenames": [tmp_path / f"relax_{i}.h5md" for i in range(n_systems)],
+        "state_frequency": 5,
+        "prop_calculators": {1: ["potential_energy"]},
+    }
+
+    # Create autobatcher
+    autobatcher_dict = False
+
+    maker = TorchSimOptimizeMaker(
+        model_type=TorchSimModelType.LENNARD_JONES,
+        model_path="",
+        optimizer=ts.Optimizer.fire,
+        convergence_fn=ConvergenceFn.FORCE,
+        trajectory_reporter_dict=trajectory_reporter_dict,
+        autobatcher_dict=autobatcher_dict,
+        max_steps=500,
+        steps_between_swaps=10,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
+        model_kwargs={"sigma": 3.405, "epsilon": 0.0104, "compute_stress": True},
+    )
+
+    job = maker.make([perturbed_structure] * n_systems)
+    response_dict = run_locally(job, ensure_success=True, root_dir=tmp_path)
+    result = list(response_dict.values())[-1][1].output
+
+    # Validate result structure (TSTaskDoc)
+    assert hasattr(result, "structures")
+    assert hasattr(result, "calcs_reversed")
+    assert hasattr(result, "time_elapsed")
+
+    # Check structures list output
+    assert isinstance(result.structures, list)
+    assert len(result.structures) == n_systems
+    assert isinstance(result.structures[0], Structure)
+
+    # Check that structure properties and site properties survive the round trip
+    for final_structure in result.structures:
+        assert final_structure.properties == perturbed_structure.properties
+        assert final_structure.site_properties["my_site_prop"] == list(
+            range(len(perturbed_structure))
+        )
+
+    # Check calculation details
+    assert len(result.calcs_reversed) == 1
+    calc = result.calcs_reversed[0]
+
+    # Check model name
+    assert calc.model == TorchSimModelType.LENNARD_JONES
+    assert calc.model_path is not None
+
+    # Check optimizer
+    assert calc.optimizer == ts.Optimizer.fire
+
+    # Check trajectory reporter details
+    assert calc.trajectory_reporter is not None
+    assert calc.trajectory_reporter.state_frequency == 5
+    assert hasattr(calc.trajectory_reporter, "prop_calculators")
+    assert all(Path(f).is_file() for f in calc.trajectory_reporter.filenames)
+
+    # Check autobatcher details
+    assert calc.autobatcher is None
+
+    # Check other parameters
+    assert calc.max_steps == 500
+    assert calc.steps_between_swaps == 10
+    assert calc.init_kwargs["cell_filter"] == ts.CellFilter.unit
+
+    # Check calculation output (energy, forces, stress)
+    assert calc.output is not None
+    assert calc.output.energies is not None
+    assert len(calc.output.energies) == n_systems
+    assert all(isinstance(e, float) for e in calc.output.energies)
+    assert calc.output.all_forces is not None
+    assert len(calc.output.all_forces) == n_systems
+    assert calc.output.stress is not None
+    assert len(calc.output.stress) == n_systems
+
+    # Check time elapsed
+    assert result.time_elapsed > 0
+
+
+@pytest.mark.skipif(_SKIP_MACE, reason="mace-torch is not installed.")
+def test_relax_job_mace(si_structure: Structure, tmp_path, test_dir) -> None:
+    """Test TSOptimizeMaker with MACE model.
+
+    Includes trajectory reporter and autobatcher.
+    """
+    mace_model_path = f"{test_dir}/forcefields/mace/MACE.model"
+
+    # Perturb the structure to make optimization meaningful
+    perturbed_structure = si_structure.copy()
+    perturbed_structure.translate_sites(
+        list(range(len(perturbed_structure))), [0.01, 0.01, 0.01]
+    )
+
+    n_systems = 2
+    trajectory_reporter_dict = {
+        "filenames": [tmp_path / f"relax_{i}.h5md" for i in range(n_systems)],
+        "state_frequency": 5,
+        "prop_calculators": {1: ["potential_energy"]},
+    }
+
+    autobatcher_dict = {"memory_scales_with": "n_atoms", "max_memory_scaler": 260}
+
+    maker = TorchSimOptimizeMaker(
+        model_type=TorchSimModelType.MACE,
+        model_path=mace_model_path,
+        optimizer=ts.Optimizer.fire,
+        convergence_fn=ConvergenceFn.FORCE,
+        trajectory_reporter_dict=trajectory_reporter_dict,
+        autobatcher_dict=autobatcher_dict,
+        max_steps=500,
+        steps_between_swaps=10,
+        init_kwargs={"cell_filter": ts.CellFilter.unit},
+    )
+
+    job = maker.make([perturbed_structure] * n_systems)
+    response_dict = run_locally(job, ensure_success=True, root_dir=tmp_path)
+    result = list(response_dict.values())[-1][1].output
+
+    # Validate result structure
+    assert hasattr(result, "structures")
+    assert len(result.structures) == n_systems
+    assert len(result.calcs_reversed) == 1
+
+    calc = result.calcs_reversed[0]
+    assert calc.model == TorchSimModelType.MACE
+    assert calc.autobatcher is not None
+    assert calc.autobatcher.memory_scales_with == "n_atoms"
+
+
+def test_md_job_comprehensive(ar_structure: Structure, tmp_path) -> None:
+    """Test TSIntegrateMaker with all kwargs.
+
+    Includes trajectory reporter and autobatcher.
+    """
+    structure = ar_structure.copy()
+    structure.properties["my_prop"] = 1.5
+    structure.add_site_property("my_site_prop", list(range(len(structure))))
+
+    n_systems = 2
+    trajectory_reporter_dict = {
+        "filenames": [tmp_path / f"md_{i}.h5md" for i in range(n_systems)],
+        "state_frequency": 2,
+        "prop_calculators": {1: ["potential_energy", "kinetic_energy", "temperature"]},
+    }
+
+    # Create autobatcher
+    autobatcher_dict = False
+
+    maker = TorchSimIntegrateMaker(
+        model_type=TorchSimModelType.LENNARD_JONES,
+        model_path="",
+        integrator=ts.Integrator.nvt_langevin,
+        n_steps=20,
+        temperature=300.0,
+        timestep=0.001,
+        trajectory_reporter_dict=trajectory_reporter_dict,
+        autobatcher_dict=autobatcher_dict,
+        model_kwargs={"sigma": 3.405, "epsilon": 0.0104, "compute_stress": True},
+    )
+
+    job = maker.make([structure] * n_systems)
+    response_dict = run_locally(job, ensure_success=True, root_dir=tmp_path)
+    result = list(response_dict.values())[-1][1].output
+
+    # Validate result structure (TSTaskDoc)
+    assert hasattr(result, "structures")
+    assert hasattr(result, "calcs_reversed")
+    assert hasattr(result, "time_elapsed")
+
+    # Check structures list output
+    assert isinstance(result.structures, list)
+    assert len(result.structures) == n_systems
+    assert isinstance(result.structures[0], Structure)
+
+    # Check that structure properties and site properties survive the round trip
+    for final_structure in result.structures:
+        assert final_structure.properties == structure.properties
+        assert final_structure.site_properties["my_site_prop"] == list(
+            range(len(structure))
+        )
+
+    # Check calculation details
+    assert len(result.calcs_reversed) == 1
+    calc = result.calcs_reversed[0]
+
+    # Check model name
+    assert calc.model == TorchSimModelType.LENNARD_JONES
+    assert calc.model_path is not None
+
+    # Check integrator
+    assert calc.integrator == ts.Integrator.nvt_langevin
+
+    # Check MD parameters
+    assert calc.n_steps == 20
+    assert calc.temperature == 300.0
+    assert calc.timestep == 0.001
+
+    # Check trajectory reporter details
+    assert calc.trajectory_reporter is not None
+    assert calc.trajectory_reporter.state_frequency == 2
+    assert hasattr(calc.trajectory_reporter, "prop_calculators")
+    assert all(Path(f).is_file() for f in calc.trajectory_reporter.filenames)
+
+    # Check autobatcher details
+    assert calc.autobatcher is None
+
+    # Check calculation output (energy, forces, stress)
+    assert calc.output is not None
+    assert calc.output.energies is not None
+    assert len(calc.output.energies) == n_systems
+    assert all(isinstance(e, float) for e in calc.output.energies)
+    assert calc.output.all_forces is not None
+    assert len(calc.output.all_forces) == n_systems
+    assert calc.output.stress is not None
+    assert len(calc.output.stress) == n_systems
+
+    # Check time elapsed
+    assert result.time_elapsed > 0
+
+
+def test_static_job_comprehensive(ar_structure: Structure, tmp_path) -> None:
+    """Test TSStaticMaker with all kwargs.
+
+    Includes trajectory reporter and autobatcher.
+    """
+    n_systems = 2
+    trajectory_reporter_dict = {
+        "filenames": [tmp_path / f"static_{i}.h5md" for i in range(n_systems)],
+        "state_frequency": 1,
+        "prop_calculators": {1: ["potential_energy", "forces", "stress"]},
+    }
+
+    # Create autobatcher
+    autobatcher_dict = False
+
+    maker = TorchSimStaticMaker(
+        model_type=TorchSimModelType.LENNARD_JONES,
+        model_path="",
+        trajectory_reporter_dict=trajectory_reporter_dict,
+        autobatcher_dict=autobatcher_dict,
+        model_kwargs={"sigma": 3.405, "epsilon": 0.0104, "compute_stress": True},
+    )
+
+    job = maker.make([ar_structure] * n_systems)
+    response_dict = run_locally(job, ensure_success=True, root_dir=tmp_path)
+    result = list(response_dict.values())[-1][1].output
+
+    # Validate result structure (TSTaskDoc)
+    assert hasattr(result, "structures")
+    assert hasattr(result, "calcs_reversed")
+    assert hasattr(result, "time_elapsed")
+
+    # Check structures list output
+    assert isinstance(result.structures, list)
+    assert len(result.structures) == n_systems
+    assert isinstance(result.structures[0], Structure)
+
+    # Check calculation details
+    assert len(result.calcs_reversed) == 1
+    calc = result.calcs_reversed[0]
+
+    # Check model name
+    assert calc.model == TorchSimModelType.LENNARD_JONES
+    assert calc.model_path is not None
+
+    # Check trajectory reporter details
+    assert calc.trajectory_reporter is not None
+    assert calc.trajectory_reporter.state_frequency == 1
+    assert hasattr(calc.trajectory_reporter, "prop_calculators")
+    assert all(Path(f).is_file() for f in calc.trajectory_reporter.filenames)
+
+    # Check autobatcher details
+    assert calc.autobatcher is None
+
+    # Check that all_properties is present
+    assert hasattr(calc, "all_properties")
+    assert isinstance(calc.all_properties, list)
+    assert len(calc.all_properties) == n_systems
+
+    # Check calculation output (energy, forces, stress)
+    assert calc.output is not None
+    assert calc.output.energies is not None
+    assert len(calc.output.energies) == n_systems
+    assert all(isinstance(e, float) for e in calc.output.energies)
+    assert calc.output.all_forces is not None
+    assert len(calc.output.all_forces) == n_systems
+    assert calc.output.stress is not None
+    assert len(calc.output.stress) == n_systems
+
+    # Check time elapsed
+    assert result.time_elapsed > 0
+
+
+@pytest.mark.skipif(
+    not HAS_HF or get_token() is None,
+    reason="Hugging Face is not installed or token is not available.",
+)
+@pytest.mark.skipif(_SKIP_FAIRCHEM, reason="fairchem-core is not installed.")
+def test_pick_model_fairchem() -> None:
+    pick_model(TorchSimModelType.FAIRCHEM, model_path="uma-s-1p1")
+
+
+@pytest.mark.skipif(_SKIP_MACE, reason="mace-torch is not installed.")
+def test_pick_model_mace(test_dir) -> None:
+    path = f"{test_dir}/forcefields/mace/MACE.model"
+    pick_model(TorchSimModelType.MACE, model_path=path)
+
+
+@pytest.mark.skipif(_SKIP_MATTERSIM, reason="mattersim is not installed.")
+def test_pick_model_mattersim() -> None:
+    pick_model(TorchSimModelType.MATTERSIM, model_path="mattersim-v1.0.0-1m.pth")
+
+
+@pytest.mark.skipif(
+    _SKIP_METATOMIC, reason="metatomic_torchsim or upet is not installed."
+)
+def test_pick_model_metatomic() -> None:
+    from upet import get_upet
+
+    # get_upet returns an instance of AtomisticModel and not a path
+    # which will break the type checker but is actually supported by
+    # MetatomicModel so its good enough for testing
+    model = get_upet(model="pet-mad", size="s")
+    pick_model(TorchSimModelType.METATOMIC, model_path=model)
+
+
+@pytest.mark.skipif(_SKIP_NEQUIP, reason="nequip is not installed.")
+def test_pick_model_nequip(test_dir) -> None:
+    path = f"{test_dir}/forcefields/nequip/nequip_ff_sr_ti_o3.nequip.pth"
+    pick_model(TorchSimModelType.NEQUIPFRAMEWORK, model_path=path)
+
+
+@pytest.mark.skipif(_SKIP_ORB, reason="orb_models is not installed.")
+def test_pick_model_orb() -> None:
+    pick_model(TorchSimModelType.ORB, model_path="orb-v2")
+
+
+@pytest.mark.skipif(_SKIP_SEVENNET, reason="sevenn is not installed.")
+def test_pick_model_sevennet() -> None:
+    pick_model(TorchSimModelType.SEVENNET, model_path="7net-0")
+
+
+def _dummy_d3_params(max_z: int = 18):
+    """Build a D3Parameters instance with arbitrary (non-physical) values."""
+    return D3Parameters(
+        rcov=torch.rand(max_z + 1, dtype=torch.float64),
+        r4r2=torch.rand(max_z + 1, dtype=torch.float64),
+        c6ab=torch.rand(max_z + 1, max_z + 1, 5, 5, dtype=torch.float64),
+        cn_ref=torch.rand(max_z + 1, max_z + 1, 5, 5, dtype=torch.float64),
+    )
+
+
+@pytest.mark.skipif(_SKIP_NVALCHEMIOPS, reason="nvalchemiops is not installed.")
+def test_pick_model_dispersion() -> None:
+    """A D3 dispersion correction should be summed with the base model.
+
+    The base model's cutoff must be preserved, while the D3 model should fall
+    back to its own default cutoff rather than inheriting the base model's.
+    """
+    from torch_sim.models.dispersion import D3DispersionModel
+    from torch_sim.models.interface import SumModel
+    from torch_sim.models.lennard_jones import LennardJonesModel
+
+    model = pick_model(
+        TorchSimModelType.LENNARD_JONES,
+        model_path="",
+        sigma=3.405,
+        epsilon=0.0104,
+        cutoff=6.0,
+        dispersion=True,
+        a1=0.4289,
+        a2=4.4407,
+        s8=0.7875,
+        d3_params=_dummy_d3_params(),
+    )
+
+    assert isinstance(model, SumModel)
+    base_model, d3_model = model.models
+    assert isinstance(base_model, LennardJonesModel)
+    assert isinstance(d3_model, D3DispersionModel)
+    assert isinstance(d3_model.d3_params, D3Parameters)
+
+    assert base_model.cutoff == pytest.approx(6.0)
+    assert d3_model.cutoff != pytest.approx(6.0)
+
+    assert d3_model.a1 == 0.4289
+    assert d3_model.a2 == 4.4407
+    assert d3_model.s8 == 0.7875
+    assert d3_model.s6 == 1.0
+
+
+@pytest.mark.skipif(_SKIP_NVALCHEMIOPS, reason="nvalchemiops is not installed.")
+def test_pick_model_dispersion_missing_params() -> None:
+    """Missing required D3 parameters should raise a clear KeyError."""
+    with pytest.raises(KeyError, match="a2"):
+        pick_model(
+            TorchSimModelType.LENNARD_JONES,
+            model_path="",
+            dispersion=True,
+            a1=0.4289,
+            s8=0.7875,
+            d3_params=_dummy_d3_params(),
+        )
