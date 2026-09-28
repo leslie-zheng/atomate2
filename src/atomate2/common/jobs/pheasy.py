@@ -531,6 +531,10 @@ def generate_phonon_displacements(
     output_schema=PhononBSDOSDoc,
     data=[PhononDos, PhononBandStructureSymmLine, "force_constants"],
 )
+
+# what do you think we also directly calculate the lattice thermal conductivity here in this function.
+# or we create another python file named lattice thermal conductivity for it????
+
 def generate_frequencies_eigenvectors(
     structure: Structure,
     supercell_matrix: np.array,
