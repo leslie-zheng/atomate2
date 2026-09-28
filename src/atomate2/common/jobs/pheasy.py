@@ -90,7 +90,7 @@ def _get_num_anharmonic_supercells(
     supercell: PhonopyAtoms,
     num_disp_anhar: int,
     anhar_max_order: int,
-    fcs_cutoff_radius: Sequence[float],
+    fcs_cutoff_radius: Sequence[float], # set a default value for it is better?
     anhar_fit_methods: Sequence[str],
 ) -> int:
     """
