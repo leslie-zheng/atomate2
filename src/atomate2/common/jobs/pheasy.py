@@ -844,6 +844,13 @@ def generate_frequencies_eigenvectors(
                 work_dir=work_dir,
                 random_seed=random_seed,
             )
+        # End of anharmonic fit loop and begin to calculate anharmonic properties 
+        # including thermal conductivity, specific heat, and phonon lifetimes.
+        
+        # I will write a function to calculate the anharmonic properties here.
+        # before that, we maybe need to renormalize the force constants at finite temperatures. 
+
+
 
     if fc_file.exists():
         # Read the force constants from the output file of pheasy code
